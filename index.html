@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>จับคู่ลูกหนี้ UC OPD กับ STM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: two upload trays side by side → run → ledger results (summary, categories, months, working list with downloads) */
+:root{
+  --bg:#f6f7f5; --surface:#ffffff; --fg:#1b2420; --muted:#5d6b64; --line:#dde3df;
+  --accent:#1f6f5c; --accent-soft:#e2f0eb; --on-accent:#ffffff;
+  --c-a:#8a6d1a; --c-a-bg:#f8efd5; --c-n:#a8322a; --c-n-bg:#fbe5e2; --c-s:#4a5aa8; --c-s-bg:#e6e9f8; --c-d:#7a3f99; --c-d-bg:#f1e5f7; --c-ok:#1f6f5c; --c-ok-bg:#e2f0eb;
+  --sans:"IBM Plex Sans Thai",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#121715; --surface:#1a211e; --fg:#e4ebe7; --muted:#9aa9a1; --line:#2c3632;
+  --accent:#5cc3a6; --accent-soft:#1d3a32; --on-accent:#0f1a16;
+  --c-a:#e2bf5c; --c-a-bg:#3a3018; --c-n:#f08a80; --c-n-bg:#40201d; --c-s:#9aa8f0; --c-s-bg:#252b4a; --c-d:#cf9ae8; --c-d-bg:#382545; --c-ok:#5cc3a6; --c-ok-bg:#1d3a32; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121715; --surface:#1a211e; --fg:#e4ebe7; --muted:#9aa9a1; --line:#2c3632;
+  --accent:#5cc3a6; --accent-soft:#1d3a32; --on-accent:#0f1a16;
+  --c-a:#e2bf5c; --c-a-bg:#3a3018; --c-n:#f08a80; --c-n-bg:#40201d; --c-s:#9aa8f0; --c-s-bg:#252b4a; --c-d:#cf9ae8; --c-d-bg:#382545; --c-ok:#5cc3a6; --c-ok-bg:#1d3a32; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.55}
+.wrap{max-width:1180px;margin:0 auto;padding-block:28px 40px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:22px}
+h1{font-size:1.6rem;margin:0;font-weight:700;text-wrap:balance;line-height:1.3}
+h2{font-size:1.05rem;margin:0 0 10px;font-weight:600}
+.sub{color:var(--muted);margin:4px 0 0;max-width:78ch}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.note{font-size:.8rem;color:var(--muted)}
+.trays{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.tray{background:var(--surface);border:1.5px dashed var(--line);border-radius:10px;padding:18px;display:grid;gap:10px;align-content:start;min-width:0}
+.tray.drag{border-color:var(--accent);background:var(--accent-soft)}
+.tray.ready{border-style:solid;border-color:var(--accent)}
+.tray .step{font-size:.75rem;letter-spacing:.06em;color:var(--accent);font-weight:600}
+.tray h3{margin:0;font-size:1.1rem}
+.tray label.pick{justify-self:start}
+.tray input[type=file]{position:absolute;width:1px;height:1px;opacity:0}
+.files{font-size:.82rem;color:var(--muted);max-height:150px;overflow:auto;display:grid;gap:2px}
+.files .ok{color:var(--c-ok)} .files .bad{color:var(--c-n)}
+.map{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.map label{display:grid;gap:2px;font-size:.75rem;color:var(--muted)}
+select,input[type=search]{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);min-width:0}
+.btn{font:inherit;font-weight:600;padding:8px 14px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:var(--on-accent);cursor:pointer;display:inline-block}
+.btn.ghost{background:transparent;color:var(--accent)}
+.btn:focus-visible,label.pick:focus-within{outline:2px solid var(--fg);outline-offset:2px}
+.btn[disabled]{opacity:.45;cursor:default}
+.runbar{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.runbar .btn{font-size:1rem;padding:10px 22px}
+#log{font-size:.85rem;color:var(--muted)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px 16px;display:grid;gap:2px}
+.kpi .l{font-size:.78rem;color:var(--muted)}
+.kpi .v{font-size:1.5rem;font-weight:600}
+.kpi .s{font-size:.82rem;color:var(--muted)}
+.kpi.hot{border-color:var(--c-n)} .kpi.hot .v{color:var(--c-n)}
+.cats{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}
+.cat{all:unset;cursor:pointer;background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--cc);border-radius:6px;padding:12px 14px;display:grid;gap:4px}
+.cat:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.cat[aria-pressed="true"]{background:var(--cbg)}
+.cat .t{font-weight:600;color:var(--cc)} .cat .d{font-size:.82rem;color:var(--muted)}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px;min-width:0}
+.scroll{overflow-x:auto}
+.months table{border-collapse:collapse;width:100%;min-width:560px}
+.months th,.months td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+.months th:first-child,.months td:first-child{text-align:left}
+.months th{font-size:.78rem;color:var(--muted);font-weight:500}
+.bar{display:inline-block;height:8px;background:var(--c-n);border-radius:2px;vertical-align:middle;margin-right:6px;opacity:.75}
+.tools{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px}
+.tools input{flex:1 1 220px}
+#msg{font-size:.85rem;color:var(--muted);flex-basis:100%}
+.list table{border-collapse:collapse;width:100%;min-width:980px;font-size:.88rem}
+.list th{text-align:left;font-size:.76rem;color:var(--muted);font-weight:500;padding:8px;border-bottom:2px solid var(--line);white-space:nowrap}
+.list td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+.list td.r,.list th.r{text-align:right}
+.pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:.75rem;font-weight:600;white-space:nowrap;color:var(--cc);background:var(--cbg)}
+.more{margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.A{--cc:var(--c-a);--cbg:var(--c-a-bg)} .N{--cc:var(--c-n);--cbg:var(--c-n-bg)} .S{--cc:var(--c-s);--cbg:var(--c-s-bg)} .D{--cc:var(--c-d);--cbg:var(--c-d-bg)}
+.method{font-size:.88rem;color:var(--muted)} .method ul{margin:0;padding-left:20px} .method li{margin-bottom:4px}
+.empty{color:var(--muted);text-align:center;padding:24px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+footer{font-size:.82rem;color:var(--muted);border-top:1px solid var(--line);padding-top:14px;line-height:1.7}
+footer a{color:var(--accent)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+<style>*,*::before,*::after{box-sizing:border-box}body{margin:0}[hidden]{display:none!important}</style>
+</head>
+<body>
+
+
+<div class="wrap">
+  <header>
+    <h1>จับคู่ลูกหนี้ UC OPD กับ STM</h1>
+    <p class="sub">อัปโหลดไฟล์ลูกหนี้รายตัวจาก HOSxP และไฟล์ STM OPUCS จาก สปสช. ระบบจับคู่ด้วย <b>เลขบัตรประชาชน + วันที่รับบริการ</b> แล้วแสดงลูกหนี้ที่ยังไม่พบใน statement ให้ดาวน์โหลด ไฟล์ทั้งหมดประมวลผลในเครื่องของคุณ ไม่ถูกส่งออกไปที่ใด</p>
+  </header>
+
+  <section class="trays">
+    <div class="tray" id="trayD">
+      <span class="step">ขั้นที่ 1</span>
+      <h3>ไฟล์ลูกหนี้ (HOSxP)</h3>
+      <span class="note">.xls / .xlsx ที่มีคอลัมน์ วันที่รับบริการ และเลขบัตรประชาชน (cid) เช่น vstdate/service_date, cid, vn, hn ยอดลูกหนี้มีหรือไม่มีก็ได้ คอลัมน์อื่น เช่น condition_found, check_result จะถูกคงไว้ในไฟล์ที่ดาวน์โหลด</span>
+      <label class="pick btn ghost">เลือกไฟล์ลูกหนี้<input type="file" id="fD" accept=".xls,.xlsx,.csv"></label>
+      <div class="files" id="filesD">หรือลากไฟล์มาวางที่นี่</div>
+      <div class="map" id="mapD" hidden></div>
+    </div>
+    <div class="tray" id="trayS">
+      <span class="step">ขั้นที่ 2</span>
+      <h3>ไฟล์ STM OPUCS (สปสช.)</h3>
+      <span class="note">เลือกได้หลายไฟล์ .xls / .xlsx หรือ .zip ที่รวมไว้ ระบบอ่านชีต “รายละเอียด(ข้อมูลปกติ)” และ “รายละเอียด(ข้อมูลอุทธรณ์)” ทุกชีต</span>
+      <label class="pick btn ghost">เลือกไฟล์ STM / .zip<input type="file" id="fS" accept=".xls,.xlsx,.zip" multiple></label>
+      <div class="files" id="filesS">หรือลากไฟล์มาวางที่นี่</div>
+      <button class="btn ghost" id="clearS" hidden>ล้างไฟล์ STM</button>
+    </div>
+  </section>
+
+  <section class="runbar">
+    <button class="btn" id="run" disabled>จับคู่</button>
+    <span id="log">เลือกไฟล์ลูกหนี้และไฟล์ STM ก่อน</span>
+  </section>
+
+  <div id="results" hidden>
+    <div style="display:grid;gap:22px">
+      <section class="kpis" id="kpis"></section>
+      <section>
+        <h2>ประเภทของรายการที่ไม่พบ <span class="note">(กดเพื่อกรองตาราง)</span></h2>
+        <div class="cats" id="cats"></div>
+      </section>
+      <section class="panel months scroll">
+        <h2>รายเดือน</h2>
+        <table id="months"></table>
+      </section>
+      <section class="panel">
+        <h2>รายชื่อลูกหนี้ที่ยังไม่พบใน STM</h2>
+        <div class="tools">
+          <input id="q" type="search" placeholder="ค้นหา ชื่อ / CID / HN / VN / condition" aria-label="ค้นหา">
+          <select id="fcat" aria-label="ประเภท"></select>
+          <select id="fmonth" aria-label="เดือน"></select>
+          <button class="btn" id="dlx">ดาวน์โหลด Excel</button>
+          <button class="btn ghost" id="dlc">CSV</button>
+          <button class="btn ghost" id="dlfull">Excel ฉบับเต็ม</button>
+          <div id="msg"></div>
+        </div>
+        <div class="list scroll"><table><thead id="th"></thead><tbody id="tb"></tbody></table></div>
+        <div class="more"><button class="btn ghost" id="moreBtn">แสดงเพิ่ม</button><span class="note" id="shown"></span></div>
+      </section>
+    </div>
+  </div>
+  <div class="empty" id="emptyState">ผลการจับคู่จะแสดงที่นี่ ได้แก่ สรุปยอด, ประเภทของรายการที่ไม่พบ, ตารางรายเดือน และรายชื่อที่ดาวน์โหลดเป็น Excel ได้</div>
+
+  <section class="panel method">
+    <h2>วิธีจับคู่</h2>
+    <ul>
+      <li>รอบแรกจับคู่ VN ของลูกหนี้กับ SEQ NO ใน STM (ต้องมีเลขบัตรและวันที่ตรงกันด้วย) จากนั้นจับคู่เลขบัตรประชาชน + วันที่รับบริการแบบนับจำนวนครั้ง</li>
+      <li>ไม่ใช้ชื่อในการจับคู่ เพราะชื่อใน STM อาจสะกดต่างหรือมีข้อความต่อท้าย</li>
+      <li><b>ไม่พบใน STM</b>: ไม่มีเลขบัตร + วันที่นี้ในทุกไฟล์ STM · <b>หลังรอบ STM ล่าสุด</b>: วันรับบริการหลังวันล่าสุดที่มีใน STM · <b>มาซ้ำวันเดียวกัน</b>: วันเดียวกันมีหลาย visit แต่ STM มีน้อยกว่า · <b>วันที่ไม่ตรง</b>: เลขบัตรเดียวกันพบใน STM ห่างไม่เกิน 7 วัน และรายการ STM นั้นยังไม่ถูกจับคู่</li>
+      <li>อัปโหลดไฟล์ STM ซ้ำได้ ระบบรวมรายการเดียวกันให้อัตโนมัติ</li>
+      <li>ไฟล์ที่ดาวน์โหลดคงคอลัมน์เดิมของไฟล์ลูกหนี้ไว้ทั้งหมดตามลำดับเดิม (เช่น condition_found, check_result) แล้วต่อท้ายด้วยผลการจับคู่</li>
+      <li>“Excel ฉบับเต็ม” มี 3 ชีต: ลูกหนี้ทุกรายพร้อมผลจับคู่, รายการที่ไม่พบ และรายการ STM ที่ไม่มีลูกหนี้คู่</li>
+    </ul>
+  </section>
+
+  <footer>
+    ออกแบบและพัฒนาโดย นายแพทย์กุลพล ตั้งรัตนาพิบูล<br>
+    นายแพทย์ชำนาญการ (ด้านเวชกรรม)<br>
+    ปฏิบัติหน้าที่ผู้อำนวยการ<a href="https://www.songkwaehospital.com/" target="_blank" rel="noopener">โรงพยาบาลสองแคว</a> อำเภอสองแคว จังหวัดน่าน
+  </footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+// CORE START
+const pad=n=>String(n).padStart(2,"0");
+function isoYMD(y,mo,d){ if(y>2400)y-=543; if(!(y>1900&&mo>=1&&mo<=12&&d>=1&&d<=31))return null; return y+"-"+pad(mo)+"-"+pad(d); }
+function toISO(v){
+  if(v==null||v==="")return null;
+  if(typeof v==="number"){ if(v<1000||v>200000)return null; const t=new Date(Math.round((Math.floor(v)-25569)*86400000)); return isoYMD(t.getUTCFullYear(),t.getUTCMonth()+1,t.getUTCDate()); }
+  if(v instanceof Date) return isoYMD(v.getFullYear(),v.getMonth()+1,v.getDate());
+  const s=String(v).trim(); let m;
+  if((m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)))return isoYMD(+m[1],+m[2],+m[3]);
+  if((m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)))return isoYMD(+m[3],+m[2],+m[1]);
+  if((m=s.match(/^(\d{4})(\d{2})(\d{2})$/)))return isoYMD(+m[1],+m[2],+m[3]);
+  return null;
+}
+function toCID(v){ if(v==null)return null; if(typeof v==="number")v=Math.round(v).toString(); const s=String(v).trim().replace(/\.0+$/,"").replace(/[\s-]/g,""); return /^\d{13}$/.test(s)?s:null; }
+function toNum(v){ if(typeof v==="number")return v; if(v==null)return 0; const n=parseFloat(String(v).replace(/,/g,"").trim()); return isFinite(n)?n:0; }
+function toStr(v){ if(v==null)return ""; if(typeof v==="number")return Number.isInteger(v)?String(v):String(v); return String(v).trim(); }
+const norm=s=>String(s??"").toLowerCase().replace(/[\s_\-().]/g,"");
+
+const DEBT_FIELDS={
+  date:{label:"วันที่รับบริการ*",keys:["servicedate","vstdate","dateserv","วันที่รับบริการ","วันรับบริการ","visitdate","regdate","date","วันที่"]},
+  cid:{label:"เลขบัตรประชาชน*",keys:["cid","pid","เลขบัตรประชาชน","เลขประจำตัวประชาชน","เลขบัตร","idcard"]},
+  amount:{label:"ยอดลูกหนี้ (ถ้ามี)",keys:["debtoramount","ยอดลูกหนี้","ลูกหนี้","debt","debtamount","balance","คงเหลือ"]},
+  vn:{label:"VN",keys:["vn","seq","seqno"]},
+  hn:{label:"HN",keys:["hn"]},
+  charge:{label:"ค่ารักษา",keys:["totalcharge","ค่ารักษา","income","charge","ค่าใช้จ่าย","ค่ารักษาพยาบาล"]},
+  pttype:{label:"ชื่อสิทธิ",keys:["pttypename","ชื่อสิทธิ","สิทธิ","pttype","hipdatacode","inscl"]},
+};
+const NAME_KEYS={prefix:["prefix","pname","คำนำหน้า"],first:["firstname","fname","ชื่อ","name"],last:["lastname","lname","นามสกุล","สกุล"],full:["fullname","ชื่อสกุล","ชื่อนามสกุล","ptname","patientname"]};
+function findCol(hdr,keys){ const h=hdr.map(norm); for(const k of keys){const i=h.indexOf(norm(k)); if(i>=0)return i;} for(const k of keys){ if(norm(k).length<3)continue; const i=h.findIndex(x=>x.includes(norm(k))); if(i>=0)return i;} return -1; }
+function detectDebtor(aoa){
+  for(let r=0;r<Math.min(aoa.length,30);r++){
+    const hdr=(aoa[r]||[]).map(toStr);
+    const cid=findCol(hdr,DEBT_FIELDS.cid.keys), date=findCol(hdr,DEBT_FIELDS.date.keys);
+    if(cid>=0&&date>=0){
+      const map={}; for(const f in DEBT_FIELDS)map[f]=findCol(hdr,DEBT_FIELDS[f].keys);
+      map.cid=cid; map.date=date;
+      const nm={}; for(const f in NAME_KEYS)nm[f]=hdr.map(norm).findIndex(x=>NAME_KEYS[f].map(norm).includes(x));
+      const extra=hdr.map((x,j)=>/condition|check_?result|เงื่อนไข|ผลตรวจ/i.test(x)?j:-1).filter(j=>j>=0);
+      return {headerRow:r,header:hdr,map,name:nm,extra};
+    }
+  }
+  return null;
+}
+function parseDebtor(aoa,det){
+  const {map,name}=det, out=[], bad=[];
+  for(let r=det.headerRow+1;r<aoa.length;r++){
+    const row=aoa[r]; if(!row||row.every(v=>v==null||v===""))continue;
+    const cid=toCID(row[map.cid]), date=toISO(row[map.date]);
+    const g=i=>i>=0?toStr(row[i]):"";
+    let nm=name.full>=0?g(name.full):(g(name.prefix)+g(name.first)+" "+g(name.last)).trim();
+    const rec={row:r+1,raw:row,ext:(det.extra||[]).map(j=>toStr(row[j])),date,cid,vn:g(map.vn),hn:g(map.hn),name:nm,pt:g(map.pttype),charge:map.charge>=0?toNum(row[map.charge]):null,amt:map.amount>=0?toNum(row[map.amount]):0};
+    if(!cid||!date){bad.push(rec);continue;}
+    rec.k=cid+"|"+date; out.push(rec);
+  }
+  return {rows:out,bad};
+}
+function parseStmSheet(aoa,sheetName,fileName){
+  let h=-1; for(let r=0;r<Math.min(aoa.length,40);r++){ if((aoa[r]||[]).some(v=>toStr(v)==="PID")){h=r;break;} }
+  if(h<0)return null;
+  const hdr=(aoa[h]||[]).map(toStr), ix=n=>hdr.findIndex(x=>x===n);
+  const c={rep:ix("REP"),tran:ix("TRAN_ID"),hn:ix("HN"),pid:ix("PID"),name:hdr.findIndex(x=>x.replace(/\s/g,"")==="ชื่อ-สกุล"),date:ix("วันเข้ารักษา"),inscl:ix("MAININSCL"),proj:ix("PROJCODE"),claim:ix("เรียกเก็บ"),comp:ix("ยอดชดเชยทั้งสิ้น"),seq:ix("SEQ NO")};
+  if(c.date<0)return null;
+  const type=/อุทธรณ์/.test(sheetName)?"อุทธรณ์":"ปกติ", out=[];
+  for(let r=h+1;r<aoa.length;r++){
+    const row=aoa[r]; if(!row)continue;
+    const pid=toCID(row[c.pid]); if(!pid)continue;
+    const date=toISO(row[c.date]); if(!date)continue;
+    const g=i=>i>=0?toStr(row[i]):"";
+    out.push({file:fileName,type,rep:g(c.rep),tran:g(c.tran),hn:g(c.hn),pid,name:g(c.name),date,proj:g(c.proj),comp:c.comp>=0?toNum(row[c.comp]):0,seq:g(c.seq).replace(/\.0+$/,"")});
+  }
+  return out;
+}
+function daysBetween(a,b){return Math.round((Date.parse(a+"T00:00:00Z")-Date.parse(b+"T00:00:00Z"))/86400000);}
+function matchAll(debtors,stmRows){
+  // unique STM visits
+  const V=new Map();
+  for(const s of stmRows){
+    const vid=/^\d{12}$/.test(s.seq)?s.seq:"T"+s.tran;
+    const k=s.pid+"|"+s.date, key=k+"#"+vid;
+    let v=V.get(key);
+    if(!v){v={key,k,vid,pid:s.pid,date:s.date,hn:s.hn,name:s.name,rep:s.rep,proj:s.proj,files:new Set(),types:new Set(),comp:0,used:false};V.set(key,v);}
+    v.files.add(s.file); v.types.add(s.type); if(s.type==="ปกติ"||!v.rep){v.rep=s.rep;} v.comp+=s.comp;
+  }
+  let stmMax=""; for(const v of V.values())if(v.date>stmMax)stmMax=v.date;
+  const ds=debtors.map(d=>Object.assign({},d,{stm:null}));
+  for(const d of ds){ if(d.vn){const v=V.get(d.k+"#"+d.vn); if(v&&!v.used){v.used=true;d.stm=v;}} }
+  const pool=new Map(); for(const v of [...V.values()].sort((a,b)=>a.k<b.k?-1:a.k>b.k?1:(a.vid<b.vid?-1:a.vid>b.vid?1:0))){ if(v.used)continue; if(!pool.has(v.k))pool.set(v.k,[]); pool.get(v.k).push(v); }
+  const rem=ds.filter(d=>!d.stm).sort((a,b)=>a.vn<b.vn?-1:a.vn>b.vn?1:0);
+  const allK=new Set([...V.values()].map(v=>v.k));
+  for(const d of rem){ const l=pool.get(d.k); if(l&&l.length){const v=l.shift(); v.used=true; d.stm=v;} }
+  const freeByPid=new Map(); for(const v of V.values()){ if(v.used)continue; if(!freeByPid.has(v.pid))freeByPid.set(v.pid,[]); freeByPid.get(v.pid).push(v); }
+  for(const d of ds){
+    if(d.stm){d.cat="M";continue;}
+    if(stmMax&&d.date>stmMax){d.cat="A";continue;}
+    const fr=(freeByPid.get(d.cid)||[]).map(v=>({v,dd:Math.abs(daysBetween(v.date,d.date))})).filter(x=>x.dd>0&&x.dd<=7).sort((a,b)=>a.dd-b.dd);
+    if(fr.length){d.cat="D";d.near=fr[0].v;continue;}
+    if(allK.has(d.k)){d.cat="S";continue;}
+    d.cat="N";
+  }
+  const freeStm=[...V.values()].filter(v=>!v.used).sort((a,b)=>a.date<b.date?-1:1);
+  return {debtors:ds,stmMax,nVisits:V.size,freeStm};
+}
+// CORE END
+
+const CATS={N:{t:"ไม่พบใน STM",d:"ไม่มีเลขบัตร + วันที่นี้ในทุกไฟล์ STM ที่อัปโหลด"},A:{t:"หลังรอบ STM ล่าสุด",d:""},S:{t:"มาซ้ำวันเดียวกัน",d:"วันเดียวกันมีหลาย visit แต่ STM มีน้อยกว่า"},D:{t:"วันที่ไม่ตรง",d:"เลขบัตรพบใน STM ต่างวัน (≤7 วัน) ควรตรวจวันที่ส่งเบิก"}};
+const ORDER=["N","A","S","D"];
+const TH_M=["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+const fmt=(n,d=2)=>Number(n).toLocaleString("th-TH",{minimumFractionDigits:d,maximumFractionDigits:d});
+const fi=n=>Number(n).toLocaleString("th-TH");
+const hasAmt=()=>S.debt&&S.debt.det.map.amount>=0;
+const baht=(n,pre=" · ")=>hasAmt()?pre+fmt(n)+" บาท":"";
+const be=iso=>{if(!iso)return"";const[y,m,d]=iso.split("-");return d+"/"+m+"/"+(+y+543)};
+const mlabel=p=>{const[y,m]=p.split("-");return TH_M[+m-1]+" "+String(+y+543).slice(2)};
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const $=id=>document.getElementById(id);
+const tick=()=>new Promise(r=>setTimeout(r,0));
+
+const S={debt:null,stmFiles:new Map(),result:null,q:"",cat:"",month:"",limit:200};
+const log=t=>{$("log").textContent=t};
+function refreshRun(){ $("run").disabled=!(S.debt&&S.debt.det&&S.stmFiles.size); if(!$("run").disabled)log("พร้อมจับคู่"); }
+
+function readWB(buf){ return XLSX.read(buf,{type:"array",cellDates:false,dense:false}); }
+const aoaOf=ws=>XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null,blankrows:false});
+
+async function loadDebtor(file){
+  if(!window.XLSX){log("โหลดตัวอ่าน Excel ไม่สำเร็จ ลองรีเฟรชหน้า");return;}
+  $("filesD").textContent="กำลังอ่าน "+file.name+" …"; await tick();
+  try{
+    const wb=readWB(await file.arrayBuffer()); let det=null,aoa=null,sheet="";
+    for(const sn of wb.SheetNames){aoa=aoaOf(wb.Sheets[sn]);det=detectDebtor(aoa);if(det){sheet=sn;break;}}
+    if(!det){S.debt=null;$("filesD").innerHTML=`<span class="bad">${esc(file.name)}: ไม่พบหัวคอลัมน์ วันที่รับบริการ และ เลขบัตรประชาชน (cid)</span>`;$("mapD").hidden=true;$("trayD").classList.remove("ready");refreshRun();return;}
+    S.debt={name:file.name,aoa,det,sheet};
+    $("filesD").innerHTML=`<span class="ok">✓ ${esc(file.name)}</span> · ชีต ${esc(sheet)} · ${fi(aoa.length-det.headerRow-1)} แถว`;
+    renderMap(); $("trayD").classList.add("ready");
+  }catch(e){S.debt=null;$("filesD").innerHTML=`<span class="bad">อ่านไฟล์ไม่ได้: ${esc(e.message)}</span>`;}
+  refreshRun();
+}
+function renderMap(){
+  const {det}=S.debt, opts=i=>`<option value="-1">— ไม่ใช้ —</option>`+det.header.map((h,j)=>`<option value="${j}" ${j===i?"selected":""}>${esc(h||("คอลัมน์ "+(j+1)))}</option>`).join("");
+  $("mapD").innerHTML=Object.entries(DEBT_FIELDS).map(([f,o])=>`<label>${o.label}<select id="map_${f}" data-f="${f}">${opts(det.map[f])}</select></label>`).join("");
+  $("mapD").hidden=false;
+  $("mapD").querySelectorAll("select").forEach(s=>s.onchange=()=>{det.map[s.dataset.f]=+s.value;});
+}
+
+async function addStmFiles(list){
+  if(!window.XLSX){log("โหลดตัวอ่าน Excel ไม่สำเร็จ ลองรีเฟรชหน้า");return;}
+  const todo=[];
+  for(const f of list){
+    if(/\.zip$/i.test(f.name)){
+      if(!window.JSZip){log("โหลดตัวอ่าน .zip ไม่สำเร็จ");continue;}
+      try{const z=await JSZip.loadAsync(await f.arrayBuffer());
+        for(const e of Object.values(z.files)){ const base=e.name.split("/").pop(); if(e.dir||/__MACOSX/.test(e.name)||base.startsWith("~$")||base.startsWith("._")||!/\.xlsx?$/i.test(base))continue; todo.push({name:base,get:()=>e.async("arraybuffer")}); }
+      }catch(e){S.stmFiles.set(f.name,{err:"เปิด .zip ไม่ได้"});}
+    } else if(/\.xlsx?$/i.test(f.name)) todo.push({name:f.name,get:()=>f.arrayBuffer()});
+  }
+  let i=0;
+  for(const t of todo){
+    i++; log(`กำลังอ่าน STM ${i}/${todo.length}: ${t.name}`); await tick();
+    try{
+      const wb=readWB(await t.get()); let rows=[],sheets=0;
+      for(const sn of wb.SheetNames){ if(!/รายละเอียด/.test(sn))continue; const r=parseStmSheet(aoaOf(wb.Sheets[sn]),sn,t.name.replace(/\.xlsx?$/i,"")); if(r){rows=rows.concat(r);sheets++;} }
+      if(!sheets){ for(const sn of wb.SheetNames){const r=parseStmSheet(aoaOf(wb.Sheets[sn]),sn,t.name.replace(/\.xlsx?$/i,""));if(r){rows=rows.concat(r);sheets++;}} }
+      S.stmFiles.set(t.name,sheets?{rows,sheets}:{err:"ไม่พบชีตรายละเอียดที่มีคอลัมน์ PID"});
+    }catch(e){S.stmFiles.set(t.name,{err:"อ่านไฟล์ไม่ได้"});}
+  }
+  renderStmFiles(); refreshRun();
+}
+function renderStmFiles(){
+  const ent=[...S.stmFiles.entries()].sort((a,b)=>a[0]<b[0]?-1:1);
+  if(!ent.length){$("filesS").textContent="หรือลากไฟล์มาวางที่นี่";$("clearS").hidden=true;$("trayS").classList.remove("ready");return;}
+  const ok=ent.filter(e=>!e[1].err), n=ok.reduce((s,e)=>s+e[1].rows.length,0);
+  let mn="",mx=""; for(const [,v] of ok)for(const r of v.rows){if(!mn||r.date<mn)mn=r.date;if(r.date>mx)mx=r.date;}
+  $("filesS").innerHTML=`<b class="ok">✓ ${ok.length} ไฟล์ · ${fi(n)} รายการ · วันรับบริการ ${be(mn)} – ${be(mx)}</b>`+ent.map(([k,v])=>v.err?`<span class="bad">✗ ${esc(k)}: ${esc(v.err)}</span>`:`<span>${esc(k)} · ${fi(v.rows.length)}</span>`).join("");
+  $("clearS").hidden=false; $("trayS").classList.toggle("ready",ok.length>0);
+}
+
+function setupDrop(tray,fn){
+  tray.addEventListener("dragover",e=>{e.preventDefault();tray.classList.add("drag")});
+  tray.addEventListener("dragleave",()=>tray.classList.remove("drag"));
+  tray.addEventListener("drop",e=>{e.preventDefault();tray.classList.remove("drag");fn([...e.dataTransfer.files])});
+}
+$("fD").onchange=e=>{if(e.target.files[0])loadDebtor(e.target.files[0]);e.target.value=""};
+$("fS").onchange=e=>{addStmFiles([...e.target.files]);e.target.value=""};
+setupDrop($("trayD"),fs=>fs[0]&&loadDebtor(fs[0]));
+setupDrop($("trayS"),fs=>addStmFiles(fs));
+$("clearS").onclick=()=>{S.stmFiles.clear();renderStmFiles();refreshRun();};
+
+$("run").onclick=async()=>{
+  const d=S.debt; if(!d)return;
+  if(d.det.map.cid<0||d.det.map.date<0){log("ต้องเลือกคอลัมน์ วันที่รับบริการ และ เลขบัตรประชาชน");return;}
+  log("กำลังจับคู่…"); await tick();
+  const {rows:debtors,bad}=parseDebtor(d.aoa,d.det);
+  const stm=[...S.stmFiles.values()].filter(v=>!v.err).flatMap(v=>v.rows);
+  const res=matchAll(debtors,stm); res.bad=bad; res.nStmRows=stm.length; res.nFiles=[...S.stmFiles.values()].filter(v=>!v.err).length;
+  res.un=res.debtors.filter(x=>x.cat!=="M").sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:(a.vn<b.vn?-1:1));
+  S.result=res; S.cat="";S.month="";S.q="";$("q").value="";S.limit=200;
+  renderResults();
+  log(`จับคู่เสร็จ: ลูกหนี้ ${fi(res.debtors.length)} visit · ไม่พบใน STM ${fi(res.un.length)} visit`+(bad.length?` · ข้าม ${fi(bad.length)} แถวที่ไม่มีเลขบัตร 13 หลักหรือวันที่`:""));
+};
+
+function renderResults(){
+  const R=S.result, D=R.debtors, U=R.un;
+  $("results").hidden=false; $("emptyState").hidden=true;
+  const sum=a=>a.reduce((s,x)=>s+x.amt,0), M=D.filter(x=>x.cat==="M");
+  CATS.A.d="วันรับบริการหลัง "+be(R.stmMax)+" ซึ่งเป็นวันล่าสุดใน STM ที่อัปโหลด";
+  $("kpis").innerHTML=`
+   <div class="kpi"><span class="l">ลูกหนี้ทั้งหมด</span><span class="v num">${fi(D.length)}</span><span class="s num">${hasAmt()?fmt(sum(D))+" บาท":"visit"}</span></div>
+   <div class="kpi"><span class="l">พบใน STM</span><span class="v num">${fi(M.length)}</span><span class="s num">${hasAmt()?fmt(sum(M))+" บาท · ":""}${D.length?(M.length/D.length*100).toFixed(1):0}%</span></div>
+   <div class="kpi hot"><span class="l">ยังไม่พบใน STM</span><span class="v num">${fi(U.length)}</span><span class="s num">${hasAmt()?fmt(sum(U))+" บาท":(D.length?(U.length/D.length*100).toFixed(1):0)+"%"}</span></div>
+   <div class="kpi"><span class="l">STM ที่ใช้</span><span class="v num">${R.nFiles} ไฟล์</span><span class="s">${fi(R.nStmRows)} รายการ · ถึง ${be(R.stmMax)} · ไม่มีลูกหนี้คู่ ${fi(R.freeStm.length)}</span></div>`;
+  $("cats").innerHTML=ORDER.map(k=>{const rs=U.filter(r=>r.cat===k);return `<button class="cat ${k}" data-k="${k}" aria-pressed="false"><span class="t">${CATS[k].t}</span><span class="num">${fi(rs.length)} ราย${baht(sum(rs))}</span><span class="d">${esc(CATS[k].d)}</span></button>`}).join("");
+  const months=[...new Set(D.map(x=>x.date.slice(0,7)))].sort();
+  const mrows=months.map(m=>{const a=D.filter(x=>x.date.startsWith(m)),u=a.filter(x=>x.cat!=="M");return [m,a.length,u.length,sum(u)]});
+  $("months").innerHTML=`<thead><tr><th>เดือน</th><th>ลูกหนี้ (visit)</th><th>ไม่พบ STM</th><th>% ไม่พบ</th>${hasAmt()?"<th>ยอดที่ไม่พบ (บาท)</th>":""}</tr></thead><tbody>`+mrows.map(m=>`<tr><td>${mlabel(m[0])}</td><td class="num">${fi(m[1])}</td><td class="num">${fi(m[2])}</td><td class="num"><span class="bar" style="width:${Math.max(2,m[2]/m[1]*120)}px"></span>${(m[2]/m[1]*100).toFixed(1)}%</td>${hasAmt()?`<td class="num">${fmt(m[3])}</td>`:""}</tr>`).join("")+"</tbody>";
+  $("fcat").innerHTML=`<option value="">ทุกประเภท</option>`+ORDER.map(k=>`<option value="${k}">${CATS[k].t}</option>`).join("");
+  $("fmonth").innerHTML=`<option value="">ทุกเดือน</option>`+months.map(m=>`<option value="${m}">${mlabel(m)}</option>`).join("");
+  renderTable();
+}
+function filtered(){const q=S.q;return S.result.un.filter(r=>(!S.cat||r.cat===S.cat)&&(!S.month||r.date.startsWith(S.month))&&(!q||(r.name+" "+r.cid+" "+r.hn+" "+r.vn+" "+r.ext.join(" ")).toLowerCase().includes(q)))}
+const nearTxt=r=>r.near?`STM ${be(r.near.date)} (${[...r.near.files].join(", ")})`:"";
+function renderTable(){
+  const f=filtered(), show=f.slice(0,S.limit);
+  document.querySelectorAll(".cat").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.k===S.cat)));
+  const det=S.debt.det, ex=det.extra||[], am=hasAmt();
+  $("th").innerHTML=`<tr><th>#</th><th>วันที่รับบริการ</th><th>VN</th><th>HN</th><th>เลขบัตรประชาชน</th><th>ชื่อ-สกุล</th><th>สิทธิ</th>${ex.map(j=>`<th>${esc(det.header[j])}</th>`).join("")}${am?'<th class="r">ยอดลูกหนี้</th>':""}<th>สถานะ</th></tr>`;
+  $("tb").innerHTML=show.map((r,i)=>`<tr><td class="num note">${i+1}</td><td class="num">${be(r.date)}</td><td class="num">${esc(r.vn)}</td><td class="num">${esc(r.hn)}</td><td class="num">${r.cid}</td><td>${esc(r.name)}</td><td>${esc(r.pt)}</td>${r.ext.map(v=>`<td class="note" style="min-width:180px">${esc(v)}</td>`).join("")}${am?`<td class="r num">${fmt(r.amt)}</td>`:""}<td><span class="pill ${r.cat}">${CATS[r.cat].t}</span>${r.near?`<div class="note">${esc(nearTxt(r))}</div>`:""}</td></tr>`).join("")||`<tr><td colspan="${9+ex.length}" class="note">ไม่มีรายการตามเงื่อนไขที่เลือก</td></tr>`;
+  $("shown").textContent=`แสดง ${fi(show.length)} จาก ${fi(f.length)} ราย`+baht(f.reduce((s,r)=>s+r.amt,0)," · ยอดลูกหนี้ ");
+  $("moreBtn").hidden=show.length>=f.length;
+  $("dlx").textContent=`ดาวน์โหลด Excel (${fi(f.length)} ราย)`;
+}
+$("cats").addEventListener("click",e=>{const b=e.target.closest(".cat");if(!b)return;S.cat=S.cat===b.dataset.k?"":b.dataset.k;$("fcat").value=S.cat;S.limit=200;renderTable()});
+$("fcat").onchange=()=>{S.cat=$("fcat").value;S.limit=200;renderTable()};
+$("fmonth").onchange=()=>{S.month=$("fmonth").value;S.limit=200;renderTable()};
+$("q").oninput=()=>{S.q=$("q").value.trim().toLowerCase();S.limit=200;renderTable()};
+$("moreBtn").onclick=()=>{S.limit+=500;renderTable()};
+
+// ---- downloads
+// ลูกหนี้: คงทุกคอลัมน์เดิมตามลำดับเดิม แล้วต่อท้ายด้วยผลการจับคู่
+const HEAD=()=>["ลำดับ",...S.debt.det.header.map((x,j)=>x||("คอลัมน์ "+(j+1))),"วันที่รับบริการ (พ.ศ.)","สถานะ STM","ไฟล์ STM / หมายเหตุ","REP","ยอดชดเชย STM"];
+function origVal(r,j){const m=S.debt.det.map,v=r.raw[j];if(v==null)return "";if(j===m.date)return r.date;if(j===m.cid)return r.cid;if(j===m.vn||j===m.hn)return toStr(v);return v;}
+const rowOf=(r,i)=>[i+1,...S.debt.det.header.map((_,j)=>origVal(r,j)),be(r.date),r.cat==="M"?"พบใน STM":CATS[r.cat].t,r.cat==="M"?[...r.stm.files].join(", "):nearTxt(r),r.cat==="M"?r.stm.rep:"",r.cat==="M"?r.stm.comp:""];
+const textColsX=()=>{const m=S.debt.det.map;return [m.cid,m.vn,m.hn].filter(j=>j>=0).map(j=>j+1)};
+function sheet(aoa,textCols,widths){const ws=XLSX.utils.aoa_to_sheet(aoa);for(let i=1;i<aoa.length;i++)for(const c of textCols){const ref=XLSX.utils.encode_cell({r:i,c});if(ws[ref]){ws[ref].t="s";ws[ref].v=String(ws[ref].v);ws[ref].z="@"}}if(widths)ws["!cols"]=widths.map(w=>({wch:w}));return ws}
+const WX=()=>{const det=S.debt.det;return [6,...det.header.map((h,j)=>det.extra.includes(j)?44:j===det.map.cid?16:j===det.map.vn?14:12),14,18,36,12,11]};
+function summarySheet(f){const R=S.result;return XLSX.utils.aoa_to_sheet([["ประเภท","จำนวน (ราย)","ยอดลูกหนี้ (บาท)"],...ORDER.map(k=>{const rs=f.filter(r=>r.cat===k);return[CATS[k].t,rs.length,+rs.reduce((s,r)=>s+r.amt,0).toFixed(2)]}),["รวม",f.length,+f.reduce((s,r)=>s+r.amt,0).toFixed(2)],[],["ไฟล์ลูกหนี้",S.debt.name],["จำนวนไฟล์ STM",R.nFiles],["STM ล่าสุดครอบคลุมถึง",be(R.stmMax)],["จับคู่ด้วย","เลขบัตรประชาชน + วันที่รับบริการ"]])}
+const fname=ext=>{let n="ลูกหนี้UC_OPD_ไม่พบSTM";if(S.cat)n+="_"+CATS[S.cat].t.replace(/\s/g,"");if(S.month)n+="_"+S.month;return n+"."+ext};
+let dl=null;
+// ไฟล์ HTML แบบใช้งานเอง: ดาวน์โหลดผ่านเบราว์เซอร์โดยตรง
+dl={save:async({filename,data})=>{const b=data instanceof Blob?data:new Blob([data],{type:"text/csv;charset=utf-8"});const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),2000);return{status:"saved"}}};
+async function save(filename,data){
+  if(!dl)return; $("msg").textContent="กำลังเตรียมไฟล์…";
+  try{await dl.save({filename,data});$("msg").textContent="บันทึก "+filename+" แล้ว"}
+  catch(e){$("msg").textContent=e&&e.code==="declined"?"ยกเลิกการดาวน์โหลด":"ดาวน์โหลดไม่สำเร็จ ("+(e&&e.code||"error")+")"}
+}
+const wbBlob=wb=>new Blob([XLSX.write(wb,{bookType:"xlsx",type:"array"})]);
+$("dlx").onclick=()=>{const f=filtered(),wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,sheet([HEAD(),...f.map(rowOf)],textColsX(),WX()),"ไม่พบใน STM");
+  XLSX.utils.book_append_sheet(wb,summarySheet(f),"สรุป"); save(fname("xlsx"),wbBlob(wb));};
+$("dlc").onclick=()=>{const f=filtered(),q=v=>{v=String(v??"");return/[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v};
+  const rows=f.map(rowOf).map(r=>{for(const c of textColsX())r[c]='="'+r[c]+'"';return r});
+  save(fname("csv"),"﻿"+[HEAD(),...rows].map(r=>r.map(q).join(",")).join("\r\n"));};
+$("dlfull").onclick=()=>{const R=S.result,wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,sheet([HEAD(),...R.debtors.slice().sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:(a.vn<b.vn?-1:1)).map(rowOf)],textColsX(),WX()),"ลูกหนี้ทั้งหมด");
+  XLSX.utils.book_append_sheet(wb,sheet([HEAD(),...R.un.map(rowOf)],textColsX(),WX()),"ไม่พบใน STM");
+  XLSX.utils.book_append_sheet(wb,sheet([["ลำดับ","วันที่รับบริการ (พ.ศ.)","HN","เลขบัตรประชาชน","ชื่อ-สกุล (STM)","REP","ไฟล์ STM","ประเภท","ยอดชดเชย"],...R.freeStm.map((v,i)=>[i+1,be(v.date),v.hn,v.pid,v.name,v.rep,[...v.files].join(", "),[...v.types].join("/"),v.comp])],[2,3,5],[6,14,9,16,28,12,36,10,11]),"STM ไม่มีลูกหนี้คู่");
+  XLSX.utils.book_append_sheet(wb,summarySheet(R.un),"สรุป");
+  save("ผลจับคู่ลูกหนี้UC_OPD_กับSTM.xlsx",wbBlob(wb));};
+</script>
+
+</body>
+</html>
