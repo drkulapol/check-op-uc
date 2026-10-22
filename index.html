@@ -74,6 +74,13 @@ select,input[type=search]{font:inherit;padding:7px 9px;border:1px solid var(--li
 .list th{text-align:left;font-size:.76rem;color:var(--muted);font-weight:500;padding:8px;border-bottom:2px solid var(--line);white-space:nowrap}
 .list td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
 .list td.r,.list th.r{text-align:right}
+.fsum{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:baseline;padding:10px 12px;margin-bottom:12px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.fsum .it{display:grid;gap:0}
+.fsum .it .l{font-size:.72rem;color:var(--muted)}
+.fsum .it .v{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:600;font-size:1.05rem}
+.fsum .it.hot .v{color:var(--c-n)}
+.fsum .sep{width:1px;align-self:stretch;background:var(--line)}
+.fsum .tag{font-size:.75rem;color:var(--muted)}
 .list th .h{display:flex;align-items:center;gap:4px;justify-content:space-between}
 .fbtn{all:unset;cursor:pointer;border:1px solid var(--line);border-radius:4px;width:20px;height:20px;display:inline-grid;place-items:center;font-size:.7rem;color:var(--muted);flex:none}
 .fbtn:hover{border-color:var(--accent);color:var(--accent)}
@@ -152,6 +159,7 @@ footer a{color:var(--accent)}
           <button class="btn ghost" id="dlfull">Excel ฉบับเต็ม</button>
           <div id="msg"></div>
         </div>
+        <div class="fsum" id="fsum"></div>
         <div class="list scroll"><table><thead id="th"></thead><tbody id="tb"></tbody></table></div>
         <div class="more"><button class="btn ghost" id="moreBtn">แสดงเพิ่ม</button><span class="note" id="shown"></span></div>
       </section>
@@ -164,7 +172,7 @@ footer a{color:var(--accent)}
     <ul>
       <li>รอบแรกจับคู่ VN ของลูกหนี้กับ SEQ NO ใน STM (ต้องมีเลขบัตรและวันที่ตรงกันด้วย) จากนั้นจับคู่เลขบัตรประชาชน + วันที่รับบริการแบบนับจำนวนครั้ง</li>
       <li>ไม่ใช้ชื่อในการจับคู่ เพราะชื่อใน STM อาจสะกดต่างหรือมีข้อความต่อท้าย</li>
-      <li><b>ไม่พบใน STM</b>: ไม่มีเลขบัตร + วันที่นี้ในทุกไฟล์ STM · <b>หลังรอบ STM ล่าสุด</b>: วันรับบริการหลังวันล่าสุดที่มีใน STM · <b>มาซ้ำวันเดียวกัน</b>: วันเดียวกันมีหลาย visit แต่ STM มีน้อยกว่า · <b>วันที่ไม่ตรง</b>: เลขบัตรเดียวกันพบใน STM ห่างไม่เกิน 7 วัน และรายการ STM นั้นยังไม่ถูกจับคู่</li>
+      <li><b>ไม่พบใน STM</b>: ไม่มีเลขบัตร + วันที่นี้ในทุกไฟล์ STM · <b>หลังรอบ STM ล่าสุด</b>: วันรับบริการหลังวันล่าสุดที่มีใน STM · <b>มาซ้ำวันเดียวกัน</b>: วันเดียวกันมีหลาย visit แต่ STM มีน้อยกว่า</li>
       <li>อัปโหลดไฟล์ STM ซ้ำได้ ระบบรวมรายการเดียวกันให้อัตโนมัติ</li>
       <li>ไฟล์ที่ดาวน์โหลดคงคอลัมน์เดิมของไฟล์ลูกหนี้ไว้ทั้งหมดตามลำดับเดิม (เช่น condition_found, check_result) แล้วต่อท้ายด้วยผลการจับคู่</li>
       <li>“Excel ฉบับเต็ม” มี 3 ชีต: ลูกหนี้ทุกรายพร้อมผลจับคู่, รายการที่ไม่พบ และรายการ STM ที่ไม่มีลูกหนี้คู่</li>
@@ -219,7 +227,8 @@ function detectDebtor(aoa){
       map.cid=cid; map.date=date;
       const nm={}; for(const f in NAME_KEYS)nm[f]=hdr.map(norm).findIndex(x=>NAME_KEYS[f].map(norm).includes(x));
       const extra=hdr.map((x,j)=>/condition|check_?result|เงื่อนไข|ผลตรวจ/i.test(x)?j:-1).filter(j=>j>=0);
-      return {headerRow:r,header:hdr,map,name:nm,extra};
+      const dup=hdr.findIndex(x=>/dup|ซ้ำ/i.test(x));
+      return {headerRow:r,header:hdr,map,name:nm,extra,dup};
     }
   }
   return null;
@@ -275,8 +284,6 @@ function matchAll(debtors,stmRows){
   for(const d of ds){
     if(d.stm){d.cat="M";continue;}
     if(stmMax&&d.date>stmMax){d.cat="A";continue;}
-    const fr=(freeByPid.get(d.cid)||[]).map(v=>({v,dd:Math.abs(daysBetween(v.date,d.date))})).filter(x=>x.dd>0&&x.dd<=7).sort((a,b)=>a.dd-b.dd);
-    if(fr.length){d.cat="D";d.near=fr[0].v;continue;}
     if(allK.has(d.k)){d.cat="S";continue;}
     d.cat="N";
   }
@@ -285,8 +292,8 @@ function matchAll(debtors,stmRows){
 }
 // CORE END
 
-const CATS={N:{t:"ไม่พบใน STM",d:"ไม่มีเลขบัตร + วันที่นี้ในทุกไฟล์ STM ที่อัปโหลด"},A:{t:"หลังรอบ STM ล่าสุด",d:""},S:{t:"มาซ้ำวันเดียวกัน",d:"วันเดียวกันมีหลาย visit แต่ STM มีน้อยกว่า"},D:{t:"วันที่ไม่ตรง",d:"เลขบัตรพบใน STM ต่างวัน (≤7 วัน) ควรตรวจวันที่ส่งเบิก"}};
-const ORDER=["N","A","S","D"];
+const CATS={N:{t:"ไม่พบในทุกไฟล์ STM",d:"ไม่มีเลขบัตร + วันที่นี้ในทุกไฟล์ STM ที่อัปโหลด"},A:{t:"หลังรอบ STM ล่าสุด",d:""},S:{t:"มาซ้ำวันเดียวกัน",d:"วันเดียวกันมีหลาย visit แต่ STM มีน้อยกว่า"},D:{t:"วันที่ไม่ตรง",d:"เลขบัตรพบใน STM ต่างวัน (≤7 วัน) ควรตรวจวันที่ส่งเบิก"}};
+const ORDER=["N","A","S"];
 const TH_M=["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
 const fmt=(n,d=2)=>Number(n).toLocaleString("th-TH",{minimumFractionDigits:d,maximumFractionDigits:d});
 const fi=n=>Number(n).toLocaleString("th-TH");
@@ -405,7 +412,7 @@ function buildCols(){
   const det=S.debt.det,m=det.map;
   const cols=det.header.map((h,j)=>({label:h||("คอลัมน์ "+(j+1)),j,
     get:j===m.date?(r=>be(r.date)):j===m.cid?(r=>r.cid):j===m.amount?(r=>fmt(r.amt)):(r=>toStr(r.raw[j])),
-    cls:j===m.amount?"r num":(j===m.date||j===m.cid||j===m.vn||j===m.hn)?"num":det.extra.includes(j)?"wide":""}));
+    cls:j===m.amount?"r num":(j===m.date||j===m.cid||j===m.vn||j===m.hn)?"num":(det.extra.includes(j)||j===det.dup)?"wide":""}));
   cols.push({label:"สถานะ STM",status:true,get:statusTxt,cls:""});
   cols.push({label:"หมายเหตุ STM",get:noteTxt,cls:"wide"});
   S.cols=cols;
@@ -420,10 +427,22 @@ function renderTable(){
   $("listTitle").textContent=S.scope==="all"?"ลูกหนี้ทั้งหมดพร้อมผลจับคู่":S.scope==="m"?"ลูกหนี้ที่พบใน STM":"รายชื่อลูกหนี้ที่ยังไม่พบใน STM";
   $("th").innerHTML=`<tr><th>#</th>${cols.map((c,i)=>`<th class="${c.cls.includes("r")?"r":""}"><span class="h">${esc(c.label)}<button class="fbtn${S.cf[i]?" on":""}" data-col="${i}" aria-label="กรอง ${esc(c.label)}" title="กรอง">▾</button></span></th>`).join("")}</tr>`;
   $("tb").innerHTML=show.map((r,n)=>`<tr><td class="num note">${n+1}</td>${cols.map((c,i)=>c.status?`<td><span class="pill ${r.cat==="M"?"":r.cat}" ${r.cat==="M"?'style="--cc:var(--c-ok);--cbg:var(--c-ok-bg)"':""}>${esc(r._c[i])}</span></td>`:`<td class="${c.cls}">${esc(r._c[i])}</td>`).join("")}</tr>`).join("")||`<tr><td colspan="${cols.length+1}" class="note">ไม่มีรายการตามเงื่อนไขที่เลือก</td></tr>`;
+  renderSum(f);
   $("shown").textContent=`แสดง ${fi(show.length)} จาก ${fi(f.length)} ราย`+baht(f.reduce((s,r)=>s+r.amt,0)," · ยอดลูกหนี้ ");
   $("moreBtn").hidden=show.length>=f.length;
   $("dlx").textContent=`ดาวน์โหลด Excel (${fi(f.length)} ราย)`;
   $("clearF").hidden=!(Object.keys(S.cf).length||S.cat||S.q);
+}
+function hasDup(r){const j=S.debt.det.dup;return j>=0&&toStr(r.raw[j])!=="";}
+function statsOf(f){const u=f.filter(r=>r.cat!=="M"),m=f.length-u.length;const by={};for(const k of ORDER)by[k]=u.filter(r=>r.cat===k);
+  return {n:f.length,m,u,uPeople:new Set(u.map(r=>r.cid)).size,people:new Set(f.map(r=>r.cid)).size,by,dupAll:f.filter(hasDup).length,dupU:u.filter(hasDup).length};}
+function filterDesc(){const d=[];d.push(S.scope==="all"?"ลูกหนี้ทั้งหมด":S.scope==="m"?"เฉพาะที่พบใน STM":"เฉพาะที่ไม่พบใน STM");if(S.cat)d.push("ประเภท: "+CATS[S.cat].t);if(S.q)d.push("ค้นหา: "+S.q);for(const k in S.cf){const f=S.cf[k];const vs=[...f.vals];d.push(S.cols[k].label+": "+(vs.length<=3?vs.map(v=>v===""?"(ว่าง)":v).join(", "):vs.length+" ค่า"));}return d.join(" · ");}
+function renderSum(f){
+  const s=statsOf(f), dj=S.debt.det.dup, it=(l,v,c="")=>`<div class="it ${c}"><span class="l">${l}</span><span class="v">${v}</span></div>`;
+  $("fsum").innerHTML=it("รายการตามตัวกรอง",fi(s.n)+" visit")+it("พบใน STM",fi(s.m))+it("ไม่พบใน STM",fi(s.u.length)+" visit","hot")+it("จำนวนคนที่ไม่พบ",fi(s.uPeople)+" คน","hot")+(hasAmt()?it("ยอดลูกหนี้ที่ไม่พบ",fmt(s.u.reduce((a,r)=>a+r.amt,0))):"")
+   +`<span class="sep"></span>`+ORDER.filter(k=>s.by[k].length).map(k=>it(CATS[k].t,fi(s.by[k].length))).join("")
+   +(dj>=0?`<span class="sep"></span>`+it(esc(S.debt.det.header[dj])+" (ไม่พบ STM / ทั้งหมด)",fi(s.dupU)+" / "+fi(s.dupAll)):"")
+   +`<span class="tag" style="flex-basis:100%">${esc(filterDesc())}</span>`;
 }
 const resetView=()=>{S.limit=200;renderTable()};
 $("cats").addEventListener("click",e=>{const b=e.target.closest(".cat");if(!b)return;S.cat=S.cat===b.dataset.k?"":b.dataset.k;if(S.cat&&S.scope==="m"){S.scope="un";$("scope").value="un"}resetView()});
@@ -483,8 +502,21 @@ function origVal(r,j){const m=S.debt.det.map,v=r.raw[j];if(v==null)return "";if(
 const rowOf=(r,i)=>[i+1,...S.debt.det.header.map((_,j)=>origVal(r,j)),be(r.date),r.cat==="M"?"พบใน STM":CATS[r.cat].t,r.cat==="M"?[...r.stm.files].join(", "):nearTxt(r),r.cat==="M"?r.stm.rep:"",r.cat==="M"?r.stm.comp:""];
 const textColsX=()=>{const m=S.debt.det.map;return [m.cid,m.vn,m.hn].filter(j=>j>=0).map(j=>j+1)};
 function sheet(aoa,textCols,widths){const ws=XLSX.utils.aoa_to_sheet(aoa);for(let i=1;i<aoa.length;i++)for(const c of textCols){const ref=XLSX.utils.encode_cell({r:i,c});if(ws[ref]){ws[ref].t="s";ws[ref].v=String(ws[ref].v);ws[ref].z="@"}}if(widths)ws["!cols"]=widths.map(w=>({wch:w}));return ws}
-const WX=()=>{const det=S.debt.det;return [6,...det.header.map((h,j)=>det.extra.includes(j)?44:j===det.map.cid?16:j===det.map.vn?14:12),14,18,36,12,11]};
-function summarySheet(f){const R=S.result;return XLSX.utils.aoa_to_sheet([["ประเภท","จำนวน (ราย)","ยอดลูกหนี้ (บาท)"],...ORDER.map(k=>{const rs=f.filter(r=>r.cat===k);return[CATS[k].t,rs.length,+rs.reduce((s,r)=>s+r.amt,0).toFixed(2)]}),["รวม",f.length,+f.reduce((s,r)=>s+r.amt,0).toFixed(2)],[],["ไฟล์ลูกหนี้",S.debt.name],["จำนวนไฟล์ STM",R.nFiles],["STM ล่าสุดครอบคลุมถึง",be(R.stmMax)],["จับคู่ด้วย","เลขบัตรประชาชน + วันที่รับบริการ"]])}
+const WX=()=>{const det=S.debt.det;return [6,...det.header.map((h,j)=>det.extra.includes(j)?44:j===det.dup?24:j===det.map.cid?16:j===det.map.vn?14:12),14,18,36,12,11]};
+function summarySheet(f,desc){const R=S.result,s=statsOf(f),am=hasAmt(),sum=a=>+a.reduce((x,r)=>x+r.amt,0).toFixed(2),det=S.debt.det;
+  const A=[[desc?"สรุป":"สรุปตามตัวกรอง",desc||filterDesc()],[],["รายการ","จำนวน (visit)","จำนวนคน (CID)"].concat(am?["ยอดลูกหนี้ (บาท)"]:[]),
+    ["รายการตามตัวกรอง",s.n,s.people].concat(am?[sum(f)]:[]),
+    ["พบใน STM",s.m,new Set(f.filter(r=>r.cat==="M").map(r=>r.cid)).size].concat(am?[sum(f.filter(r=>r.cat==="M"))]:[]),
+    ["ไม่พบใน STM",s.u.length,s.uPeople].concat(am?[sum(s.u)]:[]),
+    ...ORDER.map(k=>["   "+CATS[k].t,s.by[k].length,new Set(s.by[k].map(r=>r.cid)).size].concat(am?[sum(s.by[k])]:[]))];
+  if(det.dup>=0){const col=det.dup,lab=det.header[col]||"dup_visit",cnt=new Map();
+    for(const r of f){const v=toStr(r.raw[col]);if(!v)continue;const o=cnt.get(v)||{n:0,u:0,ppl:new Set(),uppl:new Set()};o.n++;o.ppl.add(r.cid);if(r.cat!=="M"){o.u++;o.uppl.add(r.cid);}cnt.set(v,o);}
+    const tot={n:0,u:0,ppl:new Set(),uppl:new Set()};for(const o of cnt.values()){tot.n+=o.n;tot.u+=o.u;o.ppl.forEach(x=>tot.ppl.add(x));o.uppl.forEach(x=>tot.uppl.add(x));}
+    A.push([],["ลูกหนี้ซ้ำในวัน ("+lab+")","จำนวน (visit)","จำนวนคน (CID)","ไม่พบใน STM (visit)","ไม่พบใน STM (คน)"]);
+    for(const [v,o] of [...cnt.entries()].sort((a,b)=>a[0].localeCompare(b[0],"th")))A.push([v,o.n,o.ppl.size,o.u,o.uppl.size]);
+    A.push(["รวมที่มี visit ซ้ำในวัน",tot.n,tot.ppl.size,tot.u,tot.uppl.size],["ไม่มี visit ซ้ำ",f.length-tot.n,"",s.u.length-tot.u,""]);}
+  A.push([],["ไฟล์ลูกหนี้",S.debt.name],["จำนวนไฟล์ STM",R.nFiles],["STM ล่าสุดครอบคลุมถึง",be(R.stmMax)],["จับคู่ด้วย","เลขบัตรประชาชน + วันที่รับบริการ"]);
+  const ws=XLSX.utils.aoa_to_sheet(A);ws["!cols"]=[{wch:36},{wch:16},{wch:16},{wch:20},{wch:18}];return ws}
 const fname=ext=>{let n=S.scope==="all"?"ลูกหนี้UC_OPD_ผลจับคู่STM":S.scope==="m"?"ลูกหนี้UC_OPD_พบSTM":"ลูกหนี้UC_OPD_ไม่พบSTM";if(S.cat)n+="_"+CATS[S.cat].t.replace(/\s/g,"");if(Object.keys(S.cf).length||S.q)n+="_กรอง";return n+"."+ext};
 let dl=null;
 dl={save:async({filename,data})=>{const b=data instanceof Blob?data:new Blob([data],{type:"text/csv;charset=utf-8"});const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),2000);return{status:"saved"}}};
@@ -496,7 +528,7 @@ async function save(filename,data){
 const wbBlob=wb=>new Blob([XLSX.write(wb,{bookType:"xlsx",type:"array"})]);
 $("dlx").onclick=()=>{const f=filtered(),wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,sheet([HEAD(),...f.map(rowOf)],textColsX(),WX()),S.scope==="all"?"ลูกหนี้":S.scope==="m"?"พบใน STM":"ไม่พบใน STM");
-  XLSX.utils.book_append_sheet(wb,summarySheet(f.filter(r=>r.cat!=="M")),"สรุป"); save(fname("xlsx"),wbBlob(wb));};
+  XLSX.utils.book_append_sheet(wb,summarySheet(f),"สรุป"); wb.SheetNames.unshift(wb.SheetNames.pop()); save(fname("xlsx"),wbBlob(wb));};
 $("dlc").onclick=()=>{const f=filtered(),q=v=>{v=String(v??"");return/[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v};
   const rows=f.map(rowOf).map(r=>{for(const c of textColsX())r[c]='="'+r[c]+'"';return r});
   save(fname("csv"),"﻿"+[HEAD(),...rows].map(r=>r.map(q).join(",")).join("\r\n"));};
@@ -504,7 +536,7 @@ $("dlfull").onclick=()=>{const R=S.result,wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,sheet([HEAD(),...R.debtors.slice().sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:(a.vn<b.vn?-1:1)).map(rowOf)],textColsX(),WX()),"ลูกหนี้ทั้งหมด");
   XLSX.utils.book_append_sheet(wb,sheet([HEAD(),...R.un.map(rowOf)],textColsX(),WX()),"ไม่พบใน STM");
   XLSX.utils.book_append_sheet(wb,sheet([["ลำดับ","วันที่รับบริการ (พ.ศ.)","HN","เลขบัตรประชาชน","ชื่อ-สกุล (STM)","REP","ไฟล์ STM","ประเภท","ยอดชดเชย"],...R.freeStm.map((v,i)=>[i+1,be(v.date),v.hn,v.pid,v.name,v.rep,[...v.files].join(", "),[...v.types].join("/"),v.comp])],[2,3,5],[6,14,9,16,28,12,36,10,11]),"STM ไม่มีลูกหนี้คู่");
-  XLSX.utils.book_append_sheet(wb,summarySheet(R.un),"สรุป");
+  XLSX.utils.book_append_sheet(wb,summarySheet(R.debtors,"ลูกหนี้ทั้งหมด (ไม่กรอง)"),"สรุป"); wb.SheetNames.unshift(wb.SheetNames.pop());
   save("ผลจับคู่ลูกหนี้UC_OPD_กับSTM.xlsx",wbBlob(wb));};
 </script>
 
