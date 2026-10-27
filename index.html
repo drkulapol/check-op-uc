@@ -455,6 +455,18 @@ hits AS (
     FROM b WHERE uw AND (age_mo BETWEEN 6 AND 12 OR age_mo BETWEEN 36 AND 71)
              AND '14001' = ANY(c_all)
 
+    <span class="cm">/* HCV viral load: มี 36333 | check: มี ICD10 B182
+       APRI score: มี ICD10 B182 + 30101 + (32003 หรือ 32310) | check: มี ADP 3633B */</span>
+    UNION ALL
+    SELECT vn, 56, 'HCV viral load 36333', '36333',
+           CASE WHEN dxs !~ ',B182' THEN 'ไม่มี ICD10 B182' ELSE '' END
+    FROM b WHERE uw AND '36333' = ANY(c_all)
+    UNION ALL
+    SELECT vn, 57, 'APRI score 3633B', '3633B',
+           CASE WHEN NOT '3633B' = ANY(c_all) THEN 'ขาด ADP 3633B' ELSE '' END
+    FROM b WHERE uw AND dxs ~ ',B182' AND '30101' = ANY(c_all)
+             AND c_all &amp;&amp; ARRAY['32003','32310']
+
     <span class="cm">/* 5. type 3 — 1B004N / 1B004P | ต้องมี Z124 หรือ Z014 */</span>
     UNION ALL
     SELECT vn, 60, 'Other: ' || array_to_string(x, ','), array_to_string(x, '/'),
