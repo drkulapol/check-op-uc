@@ -208,6 +208,9 @@ v AS (
            (p.sex = '2') AS fem,
            COALESCE(vs.age_y,
                     date_part('year', age(o.vstdate, p.birthday))::int) AS age_y,
+           <span class="cm">/* อายุเป็นเดือน (จากวันเกิด ณ วันรับบริการ) */</span>
+           (date_part('year', age(o.vstdate, p.birthday)) * 12
+            + date_part('month', age(o.vstdate, p.birthday)))::int    AS age_mo,
            upper(COALESCE(pt.hipdata_code, ''))                       AS hipdata_code,
            COALESCE(vs.uc_money, 0)                                   AS uc_money,
            <span class="cm">/* จำนวน visit ของ HN นี้ในวันเดียวกัน (ทุก visit ใน ovst) */</span>
@@ -350,8 +353,7 @@ hits AS (
           FROM b WHERE uw) s
     WHERE cardinality(x) &gt; 0
 
-    <span class="cm">/* 13001: หญิง 13-24 ปี (หรือหญิง 13-24 ปีที่มี 30101) | ต้องมี 13001 + ICD10
-       ไม่นับถ้าเคยคีย์ 13001 ตั้งแต่ 1/10/67 ก่อน visit นี้ */</span>
+    <span class="cm">/* 13001: หญิง 13-24 ปี (หรือหญิง 13-24 ปีที่มี 30101) | ต้องมี 13001 + ICD10 */</span>
     UNION ALL
     SELECT vn, 41, 'P&amp;P 13001', '13001',
            concat_ws(', ', CASE WHEN NOT '13001' = ANY(c_all) THEN 'ขาด ADP 13001' END,
@@ -359,7 +361,7 @@ hits AS (
     FROM b WHERE uw AND fem AND age_y BETWEEN 13 AND 24
              AND ('13001' = ANY(c_all) OR '30101' = ANY(c_all))
 
-    <span class="cm">/* 14001: หญิง 13-45 ปี | ต้องมี Z130 — ไม่นับถ้าเคยคีย์ 14001 ตั้งแต่ 1/10/67 ก่อน visit นี้ */</span>
+    <span class="cm">/* 14001: หญิง 13-45 ปี | ต้องมี Z130 */</span>
     UNION ALL
     SELECT vn, 42, 'P&amp;P 14001', '14001',
            concat_ws(', ', CASE WHEN dxs !~ ',Z130' THEN 'ไม่มี ICD10 Z130' END)
@@ -421,7 +423,7 @@ hits AS (
                                 THEN 'ไม่มี ICD10 Z390/Z391/Z392' END)
     FROM b WHERE uw AND fem AND '30016' = ANY(c_all)
 
-    <span class="cm">/* 90005: อายุ 50-70 ปี (หรือที่มี 31203) | ต้องมี 90005 + Z121 — ไม่นับถ้าเคยคีย์ใน 2 ปีก่อน visit นี้ */</span>
+    <span class="cm">/* 90005: อายุ 50-70 ปี (หรือที่มี 31203) | ต้องมี 90005 + Z121 */</span>
     UNION ALL
     SELECT vn, 52, 'P&amp;P 90005', '90005',
            concat_ws(', ', CASE WHEN NOT '90005' = ANY(c_all) THEN 'ขาด ADP 90005' END,
@@ -437,7 +439,23 @@ hits AS (
              AND dxs ~ ',Z515' AND dxs ~ ',Z718'
              AND dxs ~ ',(C[0-8][0-9]|C9[0-6]|I6[0-9]|F03|N185|I50|S06|T0[0-7]|B2[0-4])'
 
-    <span class="cm">/* 5. type 3 — 1B004N / 1B004P | ต้องมี Z124 หรือ Z014 — ไม่นับถ้าเคยคีย์ใน 5 ปีก่อน visit นี้ */</span>
+    <span class="cm">/* คัดกรองโลหิตจางจากขาดธาตุเหล็ก (เด็ก ทุกเพศ): อายุ 6-12 เดือน หรือ 3-5 ปี (36-71 เดือน)
+       13001 เด็ก: มี 30101 / 30102 / 13001 | check: (30101 หรือ 30102) + 13001 + Z130
+       14001 เด็ก: มี 14001                 | check: 14001 + Z130 */</span>
+    UNION ALL
+    SELECT vn, 54, 'P&amp;P 13001 (เด็ก คัดกรองโลหิตจาง)', '13001',
+           concat_ws(', ', CASE WHEN NOT c_all &amp;&amp; ARRAY['30101','30102'] THEN 'ขาด ADP 30101/30102' END,
+                           CASE WHEN NOT '13001' = ANY(c_all) THEN 'ขาด ADP 13001' END,
+                           CASE WHEN dxs !~ ',Z130' THEN 'ไม่มี ICD10 Z130' END)
+    FROM b WHERE uw AND (age_mo BETWEEN 6 AND 12 OR age_mo BETWEEN 36 AND 71)
+             AND c_all &amp;&amp; ARRAY['30101','30102','13001']
+    UNION ALL
+    SELECT vn, 55, 'P&amp;P 14001 (เด็ก คัดกรองโลหิตจาง)', '14001',
+           concat_ws(', ', CASE WHEN dxs !~ ',Z130' THEN 'ไม่มี ICD10 Z130' END)
+    FROM b WHERE uw AND (age_mo BETWEEN 6 AND 12 OR age_mo BETWEEN 36 AND 71)
+             AND '14001' = ANY(c_all)
+
+    <span class="cm">/* 5. type 3 — 1B004N / 1B004P | ต้องมี Z124 หรือ Z014 */</span>
     UNION ALL
     SELECT vn, 60, 'Other: ' || array_to_string(x, ','), array_to_string(x, '/'),
            CASE WHEN dxs !~ ',Z(124|014)' THEN 'ไม่มี ICD10 Z124/Z014' ELSE '' END
