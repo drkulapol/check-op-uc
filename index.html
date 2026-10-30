@@ -118,6 +118,14 @@ details.guide>summary:focus-visible{outline:2px solid var(--accent)}
 .codebar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
 pre.sql{margin:0;max-height:520px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:14px;font-family:var(--mono);font-size:.78rem;line-height:1.5;tab-size:4;white-space:pre}
 pre.sql .cm{color:var(--accent)}
+.topnav{background:var(--surface);border-bottom:1px solid var(--line)}
+.navin{max-width:1180px;margin:0 auto;padding-block:10px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px}
+.topnav .brand{font-weight:700;font-size:.9rem;color:var(--accent);white-space:nowrap}
+.navlinks{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
+.navlinks a{font-size:.84rem;color:var(--fg);text-decoration:none;padding:5px 10px;border-radius:999px;border:1px solid var(--line);white-space:nowrap}
+.navlinks a:hover{border-color:var(--accent);color:var(--accent)}
+.navlinks a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.navlinks a[aria-current="page"]{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
 footer{font-size:.82rem;color:var(--muted);border-top:1px solid var(--line);padding-top:14px;line-height:1.7}
 footer a{color:var(--accent)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -127,6 +135,7 @@ footer a{color:var(--accent)}
 <body>
 
 
+<nav class="topnav" aria-label="ระบบตรวจสอบลูกหนี้รายตัว"><div class="navin"><span class="brand">ตรวจสอบลูกหนี้รายตัว</span><div class="navlinks"><a href="https://drkulapol.github.io/opofc/index.html">ลูกหนี้ OP เบิกได้</a><a href="https://drkulapol.github.io/ipofc/index.html">ลูกหนี้ IPD เบิกได้</a><a href="https://drkulapol.github.io/ipuc/index.html">ลูกหนี้ IPD UC</a><a href="https://drkulapol.github.io/check-op-uc/index.html" aria-current="page">ลูกหนี้ OP ON TOP</a><a href="https://drkulapol.github.io/opstp/index.html">ลูกหนี้ OP STP</a><a href="https://drkulapol.github.io/ipstp/index.html">ลูกหนี้ IP STP</a></div></div></nav>
 <div class="wrap">
   <header>
     <h1>จับคู่ลูกหนี้ UC OPD กับ STM</h1>
