@@ -118,6 +118,15 @@ details.guide>summary:focus-visible{outline:2px solid var(--accent)}
 .codebar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
 pre.sql{margin:0;max-height:520px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:14px;font-family:var(--mono);font-size:.78rem;line-height:1.5;tab-size:4;white-space:pre}
 pre.sql .cm{color:var(--accent)}
+.vars{border:1px solid var(--line);border-radius:8px;padding:12px 14px;display:grid;gap:10px;background:var(--bg);margin:0;min-width:0}
+.vars legend{font-weight:600;padding:0 6px}
+.vgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.vgrid label{display:grid;gap:3px;font-size:.8rem;color:var(--muted)}
+.vgrid input{font:inherit;font-size:.95rem;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--fg);min-width:0;font-family:var(--mono)}
+.vgrid input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.vgrid input.bad{border-color:var(--c-n)}
+.vrow{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;font-size:.82rem;color:var(--muted)}
+#varMsg.bad{color:var(--c-n)}
 .topnav{background:var(--surface);border-bottom:1px solid var(--line)}
 .navin{max-width:1180px;margin:0 auto;padding-block:10px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px}
 .topnav .brand{font-weight:700;font-size:.9rem;color:var(--accent);white-space:nowrap}
@@ -165,7 +174,7 @@ if(nav.parentElement===document.body){var b=getComputedStyle(document.body),f=fu
     <div class="gbody">
       <ol class="steps">
         <li><b>เปิดเครื่องมือรัน SQL ที่ต่อฐาน HOSxP XE (PostgreSQL)</b> เช่น หน้า SQL Query ใน HOSxP, DBeaver, pgAdmin หรือ Navicat ใช้ user ที่อ่านตารางได้อย่างน้อย <code>ovst</code>, <code>patient</code>, <code>vn_stat</code>, <code>visit_pttype</code>, <code>pttype</code>, <code>ovstdiag</code>, <code>opitemrece</code>, <code>nondrugitems</code>, <code>drugitems</code></li>
-        <li><b>คัดลอก SQL ด้านล่าง</b> แล้วแก้ช่วงวันที่ใน CTE <code>params</code> บรรทัดบนสุด: <code>d1</code> = วันเริ่ม, <code>d2</code> = วันสิ้นสุด (รูปแบบ ค.ศ. <code>YYYY-MM-DD</code>) แนะนำให้ดึงทีละเดือนหรือทีละไตรมาส</li>
+        <li><b>คัดลอก SQL ด้านล่าง</b> หลังตั้งค่าตัวแปรในช่อง “ตั้งค่าตัวแปรของโรงพยาบาล” ได้แก่ ช่วงวันที่ (<code>d1</code>, <code>d2</code>), รหัสสิทธิว่าง และรหัสสิทธิ UC ต่างจังหวัด ให้ตรงกับ HOSxP ของโรงพยาบาลคุณ SQL จะเปลี่ยนตามทันที แนะนำให้ดึงทีละเดือนหรือทีละไตรมาส</li>
         <li><b>รัน SQL</b> ได้ 1 แถวต่อ visit เฉพาะ visit OPD คนไทยที่ไม่ admit, มีลูกหนี้สิทธิ (<code>vn_stat.uc_money</code> &gt; 0), มี principal diagnosis และเข้าเงื่อนไขที่เบิกชดเชยจาก สปสช. ได้อย่างน้อย 1 ข้อ ถ้าขึ้น error ชื่อคอลัมน์ ให้รัน SQL เช็คชื่อคอลัมน์ที่อยู่ท้ายไฟล์ก่อน</li>
         <li><b>Export ผลเป็น Excel</b> (.xls หรือ .xlsx) ห้ามเปลี่ยนชื่อหัวคอลัมน์ ระบบหาคอลัมน์จากชื่อ <code>vstdate</code> และ <code>cid</code> คอลัมน์อื่นจะถูกคงไว้ในไฟล์ที่ดาวน์โหลดตามลำดับเดิม</li>
         <li><b>ดาวน์โหลด Statement OP UC (ไฟล์ <code>STM_xxxxx_OPUCSyyyymm_nn.xls</code>) จากระบบ สปสช.</b> ให้ครบทุกงวดที่ครอบคลุมช่วงวันที่ลูกหนี้ จะรวมเป็น .zip ก็ได้</li>
@@ -188,6 +197,395 @@ if(nav.parentElement===document.body){var b=getComputedStyle(document.body),f=fu
           </tbody>
         </table>
       </div>
+
+      <fieldset class="vars" id="vars">
+        <legend>ตั้งค่าตัวแปรของโรงพยาบาลก่อนคัดลอก SQL</legend>
+        <div class="vgrid">
+          <label>วันที่เริ่ม (d1)<input type="date" id="v_d1"></label>
+          <label>วันที่สิ้นสุด (d2)<input type="date" id="v_d2"></label>
+          <label>รหัสสิทธิว่าง (pttype)<input type="text" id="v_blank" value="03" inputmode="text" autocomplete="off" spellcheck="false"></label>
+          <label>รหัสสิทธิ UC ต่างจังหวัด ฉุกเฉิน / ไม่ฉุกเฉิน<input type="text" id="v_ucout" value="05,31" autocomplete="off" spellcheck="false"></label>
+        </div>
+        <div class="vrow"><span id="varMsg">ใส่ได้หลายรหัส คั่นด้วยเครื่องหมาย , เช่น 05,31 ค่าเริ่มต้นคือรหัสของโรงพยาบาลสองแคว SQL ด้านล่างเปลี่ยนตามทันที</span><button class="btn ghost" id="varReset" type="button">คืนค่าเริ่มต้น</button></div>
+      </fieldset>
+      <script type="text/plain" id="sqlTpl">/* =====================================================================
+   ลูกหนี้ OPD ที่คาดว่าเบิกชดเชยจากกองทุน สปสช. ได้ + ตรวจความครบถ้วนเวชระเบียน
+   HOSxP XE (PostgreSQL)
+   ใช้ชนกับ Statement สปสช. ด้วย เลขบัตรประชาชน + วันที่รับบริการ
+   >>> แก้ช่วงวันที่ใน CTE params <<<
+   ===================================================================== */
+WITH params AS (
+    SELECT DATE '{{D1}}' AS d1,
+           DATE '{{D2}}' AS d2
+),
+
+/* 0) สิทธิล่าสุดที่เพิ่มใน visit (visit_pttype) — แก้ปัญหาเปลี่ยนสิทธิภายหลัง
+      เรียงจาก update_datetime ล่าสุด ถ้าเท่ากัน/ว่าง ใช้ pttype_number มากสุด
+      ไม่มีแถวใน visit_pttype → ใช้ ovst.pttype                                   */
+vp_last AS (
+    SELECT DISTINCT ON (vp.vn) vp.vn, vp.pttype
+    FROM visit_pttype vp
+    JOIN ovst o ON o.vn = vp.vn
+    CROSS JOIN params pr
+    WHERE o.vstdate BETWEEN pr.d1 AND pr.d2
+      AND COALESCE(btrim(vp.pttype), '') <> ''
+    ORDER BY vp.vn, vp.update_datetime DESC NULLS LAST, vp.pttype_number DESC NULLS LAST
+),
+
+/* 0.1) จำนวน visit ต่อ HN ต่อวัน (นับครั้งเดียวทั้งช่วง แทนการนับทีละแถว) */
+vday AS (
+    SELECT o.hn, o.vstdate, count(*) AS n
+    FROM ovst o
+    CROSS JOIN params pr
+    WHERE o.vstdate BETWEEN pr.d1 AND pr.d2
+    GROUP BY o.hn, o.vstdate
+),
+
+/* 1) visit OPD ของคนไทย (nationality = 99) ในช่วงวันที่ ไม่รวม visit ที่ admit (ovst.an มีค่า)
+      และไม่รวม visit ที่ลูกหนี้สิทธิ (vn_stat.uc_money) = 0
+      และต้องมี principal diagnosis (ovstdiag.diagtype = '1')
+      pttype = สิทธิล่าสุดจาก vp_last */
+v AS (
+    SELECT o.vn, o.hn, o.vstdate,
+           COALESCE(vl.pttype, o.pttype) AS pttype,
+           p.cid, p.fname, p.lname,
+           (p.sex = '2') AS fem,
+           COALESCE(vs.age_y,
+                    date_part('year', age(o.vstdate, p.birthday))::int) AS age_y,
+           /* อายุเป็นเดือน (จากวันเกิด ณ วันรับบริการ) */
+           (date_part('year', age(o.vstdate, p.birthday)) * 12
+            + date_part('month', age(o.vstdate, p.birthday)))::int    AS age_mo,
+           upper(COALESCE(pt.hipdata_code, ''))                       AS hipdata_code,
+           COALESCE(vs.uc_money, 0)                                   AS uc_money,
+           /* จำนวน visit ของ HN นี้ในวันเดียวกัน (ทุก visit ใน ovst) */
+           COALESCE(vd.n, 1)                                          AS n_visit_day
+    FROM ovst o
+    CROSS JOIN params pr
+    JOIN patient p       ON p.hn = o.hn
+    LEFT JOIN vn_stat vs ON vs.vn = o.vn
+    LEFT JOIN vp_last vl ON vl.vn = o.vn
+    LEFT JOIN vday vd    ON vd.hn = o.hn AND vd.vstdate = o.vstdate
+    LEFT JOIN pttype pt  ON pt.pttype = COALESCE(vl.pttype, o.pttype)
+    WHERE o.vstdate BETWEEN pr.d1 AND pr.d2
+      AND ltrim(p.nationality, '0') = '99'  /* คนไทย: รับทั้ง '99' และ '099' */
+      AND COALESCE(btrim(o.an), '') = ''          /* ไม่นับ visit ที่ admit */
+      AND COALESCE(vs.uc_money, 0) > 0            /* ไม่นับ visit ที่ลูกหนี้สิทธิ = 0 */
+      AND EXISTS (SELECT 1 FROM ovstdiag pd       /* ต้องมี principal diagnosis */
+                  WHERE pd.vn = o.vn AND pd.diagtype = '1'
+                    AND COALESCE(btrim(pd.icd10), '') <> '')
+),
+
+/* 4.3) รายการรหัส Instrument (ADP type 2) ที่นับ */
+inst AS (
+    SELECT ARRAY[
+           '0604','1001','1003','1007','1008','1009','1101','1102','1104','2001','2002','2004',
+           '2005','2006','2007','2101','2102','2103','2104','2105','2106','2113','2115','2702',
+           '2704','2704B','2704D','3001','3002','3003','3004','3005','3006','3101','4003','4004',
+           '4006','4007','4008','4009','4010','4012','4013','4014','4015','4016','4024','4101',
+           '4102','4103','4104','4107','4108','4109','4115','4116','4301','4302','4303','4306',
+           '4307','4308','4309','4310','4312','4313','4314','4316','4319','4320','4321','4401',
+           '4402','4403','4406','4407','4408','4409','4411','4415','4416','4417','4418','4419',
+           '4420','4421','4423','4424','4425','4428','4501','4502','4503','4504','4505','4506',
+           '4507','4508','4509','4510','4511','4601','4602','4603','4604','4605','4701','4702',
+           '4704','4705','4712','4716','4721','4801','4802','4803','4804','4810','4817','4836',
+           '5101','5103','5104','5105','5106','5201','5201B','5203','5204','5301','5302','5303',
+           '5501','5502','5503','5608','5611','5701','5702','5703A','5703B','5704A','5704B','5704C',
+           '5704D','6001','6002','6204','7002','7003','7004A','7004B','7005A','7005B','7006','7008',
+           '7010','7011','7019','7027','7028','7029','7030','7102','7105','7201','7202','7203',
+           '7204','7205','7206','7207A','7207B','7208A','7208B','7209','7210','7211','7212','7213',
+           '7214A','7214B','7215','7216','7224','7225','7227','7301','7302','7303','7304','7305',
+           '7306','7307','7308','7311','7313','7314','7315','7401','7402','7502','7506','7601',
+           '8301','8305','8306','8307','8401','8402','8403','8501','8502','8503','8506','8507',
+           '8510','8512','8514','8519','8520','8601','8602','8603','8604','8605','8606','8609',
+           '8610','8611','8612','8701','8702','8703','8704','8705','8813','8814','8815','9105']::text[] AS codes
+),
+
+/* 5) ฐานข้อมูลต่อ visit — ค้นจากตารางจริงทีละ visit ผ่าน index (LATERAL)
+      ADP / ยา TTMT / ICD10 / Authen Code */
+b AS (
+    SELECT v.*,
+           v.hipdata_code IN ('UCS', 'WEL') AS uw,
+           COALESCE(dx.dxs, '')             AS dxs,
+           COALESCE(a.c_all, '{}'::text[])  AS c_all,
+           COALESCE(a.c2,    '{}'::text[])  AS c2,
+           COALESCE(a.c4,    '{}'::text[])  AS c4,
+           COALESCE(a.c5,    '{}'::text[])  AS c5,
+           COALESCE(t.n, 0)                 AS ttmt_n,
+           au.auth_code
+    FROM v
+
+    /* รายการค่ารักษาที่ผูก NHSO ADP code */
+    LEFT JOIN LATERAL (
+        SELECT array_agg(DISTINCT x.code)                                 AS c_all,
+               array_agg(DISTINCT x.code) FILTER (WHERE x.adp_type = '2') AS c2,  /* Instrument */
+               array_agg(DISTINCT x.code) FILTER (WHERE x.adp_type = '4') AS c4,  /* ส่งเสริมป้องกัน */
+               array_agg(DISTINCT x.code) FILTER (WHERE x.adp_type = '5') AS c5   /* Project code */
+        FROM (SELECT upper(btrim(n.nhso_adp_code))   AS code,
+                     btrim(n.nhso_adp_type_id::text) AS adp_type
+              FROM opitemrece r
+              JOIN nondrugitems n ON n.icode = r.icode
+              WHERE r.vn = v.vn
+                AND COALESCE(btrim(n.nhso_adp_code), '') <> ''
+                AND COALESCE(r.qty, 0) > 0) x
+    ) a ON true
+
+    /* ยาที่มี TTMT code 7 หลัก */
+    LEFT JOIN LATERAL (
+        SELECT count(DISTINCT r.icode) AS n
+        FROM opitemrece r
+        JOIN drugitems d ON d.icode = r.icode
+        WHERE r.vn = v.vn
+          AND btrim(d.ttmt_code) ~ '^[0-9]{7}$'
+          AND COALESCE(r.qty, 0) > 0
+    ) t ON true
+
+    /* ICD10 ของ visit (ตัดจุด/ตัวใหญ่) รูป ',Z130,Z321,' */
+    LEFT JOIN LATERAL (
+        SELECT ',' || string_agg(DISTINCT upper(replace(btrim(d.icd10), '.', '')), ',') || ',' AS dxs
+        FROM ovstdiag d
+        WHERE d.vn = v.vn
+          AND COALESCE(btrim(d.icd10), '') <> ''
+    ) dx ON true
+
+    /* Authen Code — ถ้ามีหลายสิทธิ รวมด้วย , */
+    LEFT JOIN LATERAL (
+        SELECT string_agg(DISTINCT btrim(vp.auth_code), ', ') AS auth_code
+        FROM visit_pttype vp
+        WHERE vp.vn = v.vn
+          AND COALESCE(btrim(vp.auth_code), '') <> ''
+    ) au ON true
+),
+
+/* 6) เงื่อนไขที่ตรวจพบ: vn | ลำดับ | เงื่อนไข | code | สิ่งที่ขาด ('' = ครบ) */
+hits AS (
+    /* ก. สิทธิ {{ALLTXT}} ทุกราย (สิทธิว่าง {{BLANKTXT}} · UC ต่างจังหวัด {{UCTXT}}) */
+    SELECT vn, 1 AS ord, 'สิทธิ ' || pttype || ' (ทุกราย)' AS cond, ''::text AS code, ''::text AS miss
+    FROM b WHERE pttype {{ALLIN}}
+
+    /* 1. ยา TTMT 7 หลัก */
+    UNION ALL
+    SELECT vn, 10, 'ยา TTMT 7 หลัก (' || ttmt_n || ' รายการ)', '', ''
+    FROM b WHERE uw AND ttmt_n > 0
+
+    /* 2. Instrument (type 2) — นับเฉพาะ nhso_adp_code ที่อยู่ในรายการที่กำหนด (240 รหัส) */
+    UNION ALL
+    SELECT vn, 20, 'Instrument: ' || array_to_string(x, ','), '', ''
+    FROM (SELECT vn,
+                 ARRAY(SELECT c FROM unnest(c2) c WHERE c = ANY(inst.codes) ORDER BY c) AS x
+          FROM b CROSS JOIN inst WHERE uw) s
+    WHERE cardinality(x) > 0
+
+    /* 3. Project code (type 5) — WALKIN นับเฉพาะสิทธิ UC ต่างจังหวัด ({{UCTXT}}) · ไม่นับ HD3995 */
+    UNION ALL
+    SELECT vn, 30, 'Project code: ' || array_to_string(x, ','), '', ''
+    FROM (SELECT vn,
+                 array_remove(CASE WHEN pttype {{UCIN}} THEN c5 ELSE array_remove(c5, 'WALKIN') END,
+                              'HD3995') AS x
+          FROM b WHERE uw) s
+    WHERE cardinality(x) > 0
+
+    /* 4. P&P (type 4) — ประมวลผลเฉพาะรหัสที่กำหนด:
+          13001 14001 15001 30001 30009 30010 30011 30012 30013 30014 30015 30016 90004 90005
+          รหัสที่ไม่มีเงื่อนไขเฉพาะ (90004) นับตรงนี้ ไม่ต้อง check
+          รหัสที่มีเงื่อนไขเฉพาะ อยู่ด้านล่าง                                           */
+    UNION ALL
+    SELECT vn, 40, 'P&P: ' || array_to_string(x, ','), '', ''
+    FROM (SELECT vn,
+                 ARRAY(SELECT c FROM unnest(c4) c
+                       WHERE c IN ('90004')
+                       ORDER BY c) AS x
+          FROM b WHERE uw) s
+    WHERE cardinality(x) > 0
+
+    /* 13001: หญิง 13-24 ปี (หรือหญิง 13-24 ปีที่มี 30101) | ต้องมี 13001 + ICD10 */
+    UNION ALL
+    SELECT vn, 41, 'P&P 13001', '13001',
+           concat_ws(', ', CASE WHEN NOT '13001' = ANY(c_all) THEN 'ขาด ADP 13001' END,
+                           CASE WHEN dxs = '' THEN 'ไม่มี ICD10' END)
+    FROM b WHERE uw AND fem AND age_y BETWEEN 13 AND 24
+             AND ('13001' = ANY(c_all) OR '30101' = ANY(c_all))
+
+    /* 14001: หญิง 13-45 ปี | ต้องมี Z130 */
+    UNION ALL
+    SELECT vn, 42, 'P&P 14001', '14001',
+           concat_ws(', ', CASE WHEN dxs !~ ',Z130' THEN 'ไม่มี ICD10 Z130' END)
+    FROM b WHERE uw AND fem AND age_y BETWEEN 13 AND 45 AND '14001' = ANY(c_all)
+
+    /* 15001: อายุ 25-59 ปี | ต้องมี ICD10 */
+    UNION ALL
+    SELECT vn, 43, 'P&P 15001', '15001',
+           concat_ws(', ', CASE WHEN dxs = '' THEN 'ไม่มี ICD10' END)
+    FROM b WHERE uw AND age_y BETWEEN 25 AND 59 AND '15001' = ANY(c_all)
+
+    /* 30009 / 30010: หญิง */
+    UNION ALL
+    SELECT vn, 44, 'P&P 30009', '30009', ''
+    FROM b WHERE uw AND fem AND '30009' = ANY(c_all)
+    UNION ALL
+    SELECT vn, 45, 'P&P 30010', '30010', ''
+    FROM b WHERE uw AND fem AND '30010' = ANY(c_all)
+
+    /* 30011: หญิง (หรือหญิงที่มี Z34-Z35 / Oxx) | ต้องมี 30011 + (Z34-Z35 หรือ Oxx) */
+    UNION ALL
+    SELECT vn, 46, 'P&P 30011', '30011',
+           concat_ws(', ', CASE WHEN NOT '30011' = ANY(c_all) THEN 'ขาด ADP 30011' END,
+                           CASE WHEN dxs !~ ',(Z3[45]|O)' THEN 'ไม่มี ICD10 Z34-Z35/Oxx' END)
+    FROM b WHERE uw AND fem AND ('30011' = ANY(c_all) OR dxs ~ ',(Z3[45]|O)')
+
+    /* 30012: หญิง ที่มี 30213+36318+30101+36350+36003 ครบทุกตัว | ต้องมี 30012 */
+    UNION ALL
+    SELECT vn, 47, 'P&P 30012', '30012',
+           concat_ws(', ', CASE WHEN NOT '30012' = ANY(c_all) THEN 'ขาด ADP 30012' END)
+    FROM b WHERE uw AND fem
+             AND c_all @> ARRAY['30213','36318','30101','36350','36003']
+
+    /* 30013: หญิง ที่มี 36350+36003 และต้องไม่มี 36318 | ต้องมี 30013 */
+    UNION ALL
+    SELECT vn, 48, 'P&P 30013', '30013',
+           concat_ws(', ', CASE WHEN NOT '30013' = ANY(c_all) THEN 'ขาด ADP 30013' END)
+    FROM b WHERE uw AND fem
+             AND c_all @> ARRAY['36350','36003']
+             AND NOT '36318' = ANY(c_all)
+
+    /* 30014: หญิง (หรือหญิงที่มี 31101) | ต้องมี 30014 + Z320/Z321 */
+    UNION ALL
+    SELECT vn, 49, 'P&P 30014', '30014',
+           concat_ws(', ', CASE WHEN NOT '30014' = ANY(c_all) THEN 'ขาด ADP 30014' END,
+                           CASE WHEN dxs !~ ',Z32[01]' THEN 'ไม่มี ICD10 Z320/Z321' END)
+    FROM b WHERE uw AND fem AND ('30014' = ANY(c_all) OR '31101' = ANY(c_all))
+
+    /* 30015: หญิง | ต้องมี Z390/Z391/Z392 */
+    UNION ALL
+    SELECT vn, 50, 'P&P 30015', '30015',
+           concat_ws(', ', CASE WHEN dxs !~ ',Z39[012]' THEN 'ไม่มี ICD10 Z390/Z391/Z392' END)
+    FROM b WHERE uw AND fem AND '30015' = ANY(c_all)
+
+    /* 30016: หญิง | ต้องมี Z390/Z391/Z392 — ยกเว้นถ้ามี 30011 ใน visit เดียวกัน ไม่ต้อง check */
+    UNION ALL
+    SELECT vn, 51, 'P&P 30016', '30016',
+           concat_ws(', ', CASE WHEN NOT '30011' = ANY(c_all) AND dxs !~ ',Z39[012]'
+                                THEN 'ไม่มี ICD10 Z390/Z391/Z392' END)
+    FROM b WHERE uw AND fem AND '30016' = ANY(c_all)
+
+    /* 90005: อายุ 50-70 ปี (หรือที่มี 31203) | ต้องมี 90005 + Z121 */
+    UNION ALL
+    SELECT vn, 52, 'P&P 90005', '90005',
+           concat_ws(', ', CASE WHEN NOT '90005' = ANY(c_all) THEN 'ขาด ADP 90005' END,
+                           CASE WHEN dxs !~ ',Z121' THEN 'ไม่มี ICD10 Z121' END)
+    FROM b WHERE uw AND age_y BETWEEN 50 AND 70
+             AND ('90005' = ANY(c_all) OR '31203' = ANY(c_all))
+
+    /* 30001: นับเฉพาะ visit ที่มี Z515 + Z718 และ diagnosis อย่างน้อย 1 ตัวใน
+       C00-C96, I60-I69, F03, N185, I50, S06, T00-T07, B20-B24 | ไม่ต้อง check */
+    UNION ALL
+    SELECT vn, 53, 'P&P 30001', '30001', ''
+    FROM b WHERE uw AND '30001' = ANY(c_all)
+             AND dxs ~ ',Z515' AND dxs ~ ',Z718'
+             AND dxs ~ ',(C[0-8][0-9]|C9[0-6]|I6[0-9]|F03|N185|I50|S06|T0[0-7]|B2[0-4])'
+
+    /* คัดกรองโลหิตจางจากขาดธาตุเหล็ก (เด็ก ทุกเพศ): อายุ 6-12 เดือน หรือ 3-5 ปี (36-71 เดือน)
+       13001 เด็ก: มี 30101 / 30102 / 13001 | check: (30101 หรือ 30102) + 13001 + Z130
+       14001 เด็ก: มี 14001                 | check: 14001 + Z130 */
+    UNION ALL
+    SELECT vn, 54, 'P&P 13001 (เด็ก คัดกรองโลหิตจาง)', '13001',
+           concat_ws(', ', CASE WHEN NOT c_all && ARRAY['30101','30102'] THEN 'ขาด ADP 30101/30102' END,
+                           CASE WHEN NOT '13001' = ANY(c_all) THEN 'ขาด ADP 13001' END,
+                           CASE WHEN dxs !~ ',Z130' THEN 'ไม่มี ICD10 Z130' END)
+    FROM b WHERE uw AND (age_mo BETWEEN 6 AND 12 OR age_mo BETWEEN 36 AND 71)
+             AND c_all && ARRAY['30101','30102','13001']
+    UNION ALL
+    SELECT vn, 55, 'P&P 14001 (เด็ก คัดกรองโลหิตจาง)', '14001',
+           concat_ws(', ', CASE WHEN dxs !~ ',Z130' THEN 'ไม่มี ICD10 Z130' END)
+    FROM b WHERE uw AND (age_mo BETWEEN 6 AND 12 OR age_mo BETWEEN 36 AND 71)
+             AND '14001' = ANY(c_all)
+
+    /* HCV viral load: มี 36333 | check: มี ICD10 B182
+       APRI score: มี ICD10 B182 + 30101 + (32003 หรือ 32310) | check: มี ADP 3633B */
+    UNION ALL
+    SELECT vn, 56, 'HCV viral load 36333', '36333',
+           CASE WHEN dxs !~ ',B182' THEN 'ไม่มี ICD10 B182' ELSE '' END
+    FROM b WHERE uw AND '36333' = ANY(c_all)
+    UNION ALL
+    SELECT vn, 57, 'APRI score 3633B', '3633B',
+           CASE WHEN NOT '3633B' = ANY(c_all) THEN 'ขาด ADP 3633B' ELSE '' END
+    FROM b WHERE uw AND dxs ~ ',B182' AND '30101' = ANY(c_all)
+             AND c_all && ARRAY['32003','32310']
+
+    /* 5. type 3 — 1B004N / 1B004P | ต้องมี Z124 หรือ Z014 */
+    UNION ALL
+    SELECT vn, 60, 'Other: ' || array_to_string(x, ','), array_to_string(x, '/'),
+           CASE WHEN dxs !~ ',Z(124|014)' THEN 'ไม่มี ICD10 Z124/Z014' ELSE '' END
+    FROM (SELECT vn, dxs,
+                 ARRAY(SELECT c FROM unnest(c_all) c WHERE c IN ('1B004N','1B004P') ORDER BY c) AS x
+          FROM b WHERE uw) s
+    WHERE cardinality(x) > 0
+
+    /* Cons01 / Eva001: นับเฉพาะ visit ที่มีครบทั้ง Cons01 + Eva001 + Z515 + Z718
+       และมี diagnosis อย่างน้อย 1 ตัวใน C00-C96, I60-I69, F03, N185, I50, S06, T00-T07, B20-B24
+       ไม่ต้อง check */
+    UNION ALL
+    SELECT vn, 61, 'Other: Cons01/Eva001', 'Cons01/Eva001', ''
+    FROM b WHERE uw
+             AND c_all @> ARRAY['CONS01','EVA001']
+             AND dxs ~ ',Z515' AND dxs ~ ',Z718'
+             AND dxs ~ ',(C[0-8][0-9]|C9[0-6]|I6[0-9]|F03|N185|I50|S06|T0[0-7]|B2[0-4])'
+
+    /* DRUGP / TELMED */
+    UNION ALL
+    SELECT vn, 62, 'Other: ' || array_to_string(x, ','), '', ''
+    FROM (SELECT vn,
+                 ARRAY(SELECT c FROM unnest(c_all) c WHERE c IN ('DRUGP','TELMED') ORDER BY c) AS x
+          FROM b WHERE uw) s
+    WHERE cardinality(x) > 0
+
+    /* FP001 | ต้องมี Z301 */
+    UNION ALL
+    SELECT vn, 63, 'Other: FP001', 'FP001',
+           CASE WHEN dxs !~ ',Z301' THEN 'ไม่มี ICD10 Z301' ELSE '' END
+    FROM b WHERE uw AND 'FP001' = ANY(c_all)
+
+    /* FP002_1 / FP002_2 | ต้องมี Z308 */
+    UNION ALL
+    SELECT vn, 64, 'Other: ' || array_to_string(x, ','), array_to_string(x, '/'),
+           CASE WHEN dxs !~ ',Z308' THEN 'ไม่มี ICD10 Z308' ELSE '' END
+    FROM (SELECT vn, dxs,
+                 ARRAY(SELECT c FROM unnest(c_all) c WHERE c IN ('FP002_1','FP002_2') ORDER BY c) AS x
+          FROM b WHERE uw) s
+    WHERE cardinality(x) > 0
+)
+
+/* 7) ผลลัพธ์: 1 แถวต่อ visit */
+SELECT b.vstdate                                     AS vstdate,
+       b.hn                                          AS hn,
+       b.cid                                         AS cid,
+       b.auth_code::varchar(200)                     AS auth_code,
+       b.fname                                       AS fname,
+       b.lname                                       AS lname,
+       string_agg(h.cond, ' | ' ORDER BY h.ord)::varchar(1000) AS condition_found,
+       (CASE WHEN bool_and(h.miss = '') THEN 'ครบถ้วน'
+            ELSE 'ไม่ครบ: ' || string_agg(h.code || ' ' || h.miss, '; ' ORDER BY h.ord)
+                               FILTER (WHERE h.miss <> '')
+       END)::varchar(1000)                           AS check_result,
+       (CASE WHEN b.n_visit_day > 1
+            THEN 'มี visit ซ้ำในวัน (' || b.n_visit_day || ' visit)' ELSE '' END)::varchar(50) AS dup_visit,
+       b.vn, b.pttype, b.hipdata_code
+FROM hits h
+JOIN b ON b.vn = h.vn
+GROUP BY b.vstdate, b.cid, b.fname, b.lname, b.hn, b.vn, b.pttype, b.hipdata_code, b.auth_code, b.n_visit_day
+ORDER BY b.vstdate, b.cid;
+
+
+/* ---------------------------------------------------------------------
+   ถ้า error เรื่องชื่อคอลัมน์ ให้รันเช็คก่อน:
+   SELECT table_name, column_name FROM information_schema.columns
+   WHERE (table_name = 'drugitems'    AND column_name ILIKE '%tmt%')
+      OR (table_name = 'nondrugitems' AND column_name ILIKE '%adp%')
+      OR (table_name = 'patient'      AND column_name ILIKE '%nation%')
+      OR (table_name = 'visit_pttype' AND (column_name ILIKE '%auth%'
+                                           OR column_name ILIKE '%update%'
+                                           OR column_name ILIKE '%number%'));
+   --------------------------------------------------------------------- */
+</script>
 
       <div class="codebar">
         <b>SQL: ลูกหนี้ OPD ที่คาดว่าเบิกชดเชยจาก สปสช. ได้ + ตรวจความครบถ้วนเวชระเบียน</b>
@@ -998,6 +1396,37 @@ async function save(filename,data){
   try{await dl.save({filename,data});$("msg").textContent="บันทึก "+filename+" แล้ว"}
   catch(e){$("msg").textContent=e&&e.code==="declined"?"ยกเลิกการดาวน์โหลด":"ดาวน์โหลดไม่สำเร็จ ("+(e&&e.code||"error")+")"}
 }
+// ---- ตัวแปรใน SQL (แต่ละ รพ. ใช้รหัสสิทธิต่างกันได้)
+const VDEF={blank:"03",ucout:"05,31"};
+const VKEY="drk_opuc_sqlvars";
+function vCodes(s){return String(s||"").split(/[\s,;]+/).map(x=>x.trim()).filter(Boolean);}
+const vOK=c=>/^[A-Za-z0-9]{1,10}$/.test(c);
+const vIn=a=>a.length?"IN ("+a.map(c=>"'"+c+"'").join(", ")+")":"IN (NULL) /* ไม่ได้ระบุรหัส */";
+function vMonth(){const d=new Date(),y=d.getFullYear(),m=d.getMonth();const f=x=>x.getFullYear()+"-"+String(x.getMonth()+1).padStart(2,"0")+"-"+String(x.getDate()).padStart(2,"0");return [f(new Date(y,m,1)),f(new Date(y,m+1,0))];}
+function renderSql(){
+  const blank=vCodes($("v_blank").value), uc=vCodes($("v_ucout").value), d1=$("v_d1").value, d2=$("v_d2").value;
+  const badB=blank.filter(c=>!vOK(c)), badU=uc.filter(c=>!vOK(c));
+  $("v_blank").classList.toggle("bad",!!badB.length); $("v_ucout").classList.toggle("bad",!!badU.length);
+  const msgs=[]; if(badB.length||badU.length) msgs.push("รหัสสิทธิใช้ได้เฉพาะตัวอักษร/ตัวเลข: "+badB.concat(badU).join(", "));
+  if(!d1||!d2) msgs.push("กรุณาเลือกวันที่ให้ครบ"); else if(d1>d2) msgs.push("วันที่เริ่มต้องไม่เกินวันที่สิ้นสุด");
+  const b=blank.filter(vOK), u=uc.filter(vOK), all=[...new Set(b.concat(u))];
+  const txt=a=>a.length?a.join(" "):"(ไม่ระบุ)";
+  const sql=$("sqlTpl").textContent.replace(/\{\{D1\}\}/g,d1||"YYYY-MM-DD").replace(/\{\{D2\}\}/g,d2||"YYYY-MM-DD")
+    .replace(/\{\{ALLIN\}\}/g,vIn(all)).replace(/\{\{UCIN\}\}/g,vIn(u))
+    .replace(/\{\{ALLTXT\}\}/g,txt(all)).replace(/\{\{BLANKTXT\}\}/g,txt(b)).replace(/\{\{UCTXT\}\}/g,txt(u));
+  const e=sql.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  $("sqlCode").innerHTML=e.replace(/(\/\*[\s\S]*?\*\/)/g,'<span class="cm">$1</span>');
+  const m=$("varMsg"); if(msgs.length){m.textContent=msgs.join(" · ");m.classList.add("bad");} else {m.textContent="ใส่ได้หลายรหัส คั่นด้วยเครื่องหมาย , SQL ด้านล่างเปลี่ยนตามแล้ว: สิทธิว่าง "+txt(b)+" · UC ต่างจังหวัด "+txt(u);m.classList.remove("bad");}
+  try{localStorage.setItem(VKEY,JSON.stringify({blank:$("v_blank").value,ucout:$("v_ucout").value}));}catch(_){}
+}
+(function(){
+  const [m1,m2]=vMonth(); $("v_d1").value=m1; $("v_d2").value=m2;
+  try{const s=JSON.parse(localStorage.getItem(VKEY)||"null"); if(s){if(typeof s.blank==="string")$("v_blank").value=s.blank; if(typeof s.ucout==="string")$("v_ucout").value=s.ucout;}}catch(_){}
+  ["v_d1","v_d2","v_blank","v_ucout"].forEach(id=>$(id).addEventListener("input",renderSql));
+  $("varReset").onclick=()=>{$("v_blank").value=VDEF.blank;$("v_ucout").value=VDEF.ucout;const [a,b]=vMonth();$("v_d1").value=a;$("v_d2").value=b;renderSql();};
+  renderSql();
+})();
+
 // ---- คู่มือ / SQL
 const SQL_NAME="ลูกหนี้OPD_สปสช_HOSxP.sql";
 $("openGuide").onclick=()=>{$("guide").open=true;$("guide").scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"start"})};
