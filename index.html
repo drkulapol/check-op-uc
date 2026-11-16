@@ -184,6 +184,7 @@ if(nav.parentElement===document.body){var b=getComputedStyle(document.body),f=fu
             <tr><td><code>auth_code</code></td><td>Authen Code จาก <code>visit_pttype</code> ถ้ามีหลายสิทธิ คั่นด้วย ,</td></tr>
             <tr><td><code>condition_found</code></td><td>เงื่อนไขที่ทำให้ visit นี้คาดว่าเบิกได้ เช่น ยา TTMT 7 หลัก, Instrument, Project code, P&amp;P, DRUGP/TELMED, FP</td></tr>
             <tr><td><code>check_result</code></td><td>“ครบถ้วน” หรือ “ไม่ครบ: …” บอกรหัส ADP หรือ ICD10 ที่ยังขาด</td></tr>
+            <tr><td><code>expected_amount</code></td><td>ยอดเงินที่คาดว่าจะได้รับ (บาท): สิทธิว่าง / UC ต่างจังหวัด = ลูกหนี้ทั้ง visit (<code>uc_money</code>) · สิทธิอื่น = ผลรวมตามรายการที่ตรวจพบ (ยา TTMT เหมาตามรายการ, Instrument ตามราคาที่คิด, P&amp;P / FP / Other ตามอัตรา)</td></tr>
             <tr><td><code>dup_visit</code></td><td>HN นี้มีหลาย visit ในวันเดียวกัน (นับทุก visit ใน <code>ovst</code>)</td></tr>
             <tr><td><code>pttype</code>, <code>hipdata_code</code></td><td>สิทธิล่าสุดของ visit (จาก <code>visit_pttype</code> ที่อัปเดตล่าสุด) และรหัสกองทุน (UCS / WEL)</td></tr>
           </tbody>
@@ -303,6 +304,9 @@ b AS (
            COALESCE(a.c4,    '{}'::text[])  AS c4,
            COALESCE(a.c5,    '{}'::text[])  AS c5,
            COALESCE(t.n, 0)                 AS ttmt_n,
+           COALESCE(t.amt, 0)               AS ttmt_amt,
+           COALESCE(t.kkd, false)           AS ttmt_kkd,   /* ยอดเงินยา TTMT (เหมาต่อรายการยา) */
+           COALESCE(ia.amt, 0)              AS inst_amt,   /* ยอดเงิน Instrument (ราคาที่คิดตามสิทธิ UC) */
            au.auth_code
     FROM v
 
@@ -321,15 +325,42 @@ b AS (
                 AND COALESCE(r.qty, 0) > 0) x
     ) a ON true
 
-    /* ยาที่มี TTMT code 7 หลัก */
+    /* ยาที่มี TTMT code 7 หลัก: จำนวนรายการ + ยอดเงินเหมาตามรายการยา (ไม่สนปริมาณ, จับจากชื่อยา) */
     LEFT JOIN LATERAL (
-        SELECT count(DISTINCT r.icode) AS n
-        FROM opitemrece r
-        JOIN drugitems d ON d.icode = r.icode
-        WHERE r.vn = v.vn
-          AND btrim(d.ttmt_code) ~ '^[0-9]{7}$'
-          AND COALESCE(r.qty, 0) > 0
+        SELECT count(*) AS n,
+               bool_or(dd.name LIKE '%กระดูกไก่ดำ%') AS kkd,   /* มียากระดูกไก่ดำ (จ่ายรวมใน GB) */
+               sum(CASE
+                  WHEN dd.name LIKE '%ไพล%' THEN 40
+                  WHEN dd.name LIKE '%มะขามป้อม%' THEN 84
+                  WHEN dd.name LIKE '%มะแว้ง%' THEN 50
+                  WHEN dd.name LIKE '%อบเชย%' THEN 84
+                  WHEN dd.name LIKE '%ขมิ้นชัน%' THEN 56
+                  WHEN dd.name LIKE '%มะขามแขก%' THEN 31.5
+                  WHEN dd.name LIKE '%เพชรสัง%' THEN 204
+                  WHEN dd.name LIKE '%พญายอ%' THEN 33
+                  WHEN dd.name LIKE '%กระดูกไก่%' THEN 0
+                  WHEN dd.name LIKE '%เทพจิต%' THEN 70
+                  WHEN dd.name LIKE '%ประคบ%' THEN 100
+                  WHEN dd.name LIKE '%สหัศธา%' THEN 73
+                  ELSE 0 END) AS amt
+        FROM (SELECT DISTINCT r.icode, d.name
+              FROM opitemrece r
+              JOIN drugitems d ON d.icode = r.icode
+              WHERE r.vn = v.vn
+                AND btrim(d.ttmt_code) ~ '^[0-9]{7}$'
+                AND COALESCE(r.qty, 0) > 0) dd
     ) t ON true
+
+    /* ยอดเงิน Instrument (type 2, เฉพาะ 240 รหัส) = ราคาที่คิดในรายการ (opitemrece.sum_price) */
+    LEFT JOIN LATERAL (
+        SELECT sum(r.sum_price) AS amt
+        FROM opitemrece r
+        JOIN nondrugitems n ON n.icode = r.icode
+        WHERE r.vn = v.vn
+          AND btrim(n.nhso_adp_type_id::text) = '2'
+          AND upper(btrim(n.nhso_adp_code)) = ANY((SELECT codes FROM inst)::text[])
+          AND COALESCE(r.qty, 0) > 0
+    ) ia ON true
 
     /* ICD10 ของ visit (ตัดจุด/ตัวใหญ่) รูป ',Z130,Z321,' */
     LEFT JOIN LATERAL (
@@ -356,7 +387,8 @@ hits AS (
 
     /* 1. ยา TTMT 7 หลัก */
     UNION ALL
-    SELECT vn, 10, 'ยา TTMT 7 หลัก (' || ttmt_n || ' รายการ)', '', ''
+    SELECT vn, 10, 'ยา TTMT 7 หลัก (' || ttmt_n || ' รายการ'
+                   || CASE WHEN ttmt_kkd THEN ' · กระดูกไก่ดำ จ่ายรวมใน GB' ELSE '' END || ')', '', ''
     FROM b WHERE uw AND ttmt_n > 0
 
     /* 2. Instrument (type 2) — นับเฉพาะ nhso_adp_code ที่อยู่ในรายการที่กำหนด (240 รหัส) */
@@ -558,12 +590,46 @@ SELECT b.vstdate                                     AS vstdate,
             ELSE 'ไม่ครบ: ' || string_agg(h.code || ' ' || h.miss, '; ' ORDER BY h.ord)
                                FILTER (WHERE h.miss <> '')
        END)::varchar(1000)                           AS check_result,
+       /* ยอดเงินคาดว่าจะได้รับ: สิทธิ {{ALLTXT}} = ทั้ง visit (ลูกหนี้สิทธิ) | อื่นๆ = ผลรวมรายการที่ตรวจพบ */
+       (CASE WHEN b.pttype {{ALLIN}} THEN b.uc_money
+             ELSE sum(CASE h.ord
+                      WHEN 10 THEN b.ttmt_amt                                             /* ยา TTMT */
+                      WHEN 20 THEN b.inst_amt                                             /* Instrument */
+                      WHEN 40 THEN CASE WHEN '90004' = ANY(b.c_all) THEN 600 ELSE 0 END
+                      WHEN 41 THEN CASE WHEN '13001' = ANY(b.c_all) THEN 65  ELSE 0 END
+                      WHEN 42 THEN 80                                                     /* 14001 */
+                      WHEN 43 THEN 100                                                    /* 15001 */
+                      WHEN 44 THEN 500                                                    /* 30009 */
+                      WHEN 45 THEN 400                                                    /* 30010 */
+                      WHEN 46 THEN CASE WHEN '30011' = ANY(b.c_all) THEN 360 ELSE 0 END
+                      WHEN 47 THEN CASE WHEN '30012' = ANY(b.c_all) THEN 600 ELSE 0 END
+                      WHEN 48 THEN CASE WHEN '30013' = ANY(b.c_all) THEN 190 ELSE 0 END
+                      WHEN 49 THEN CASE WHEN '30014' = ANY(b.c_all) THEN 75  ELSE 0 END
+                      WHEN 50 THEN 150                                                    /* 30015 */
+                      WHEN 51 THEN 135                                                    /* 30016 */
+                      WHEN 52 THEN CASE WHEN '90005' = ANY(b.c_all) THEN 60  ELSE 0 END
+                      WHEN 53 THEN 1000                                                   /* Palliative (30001) */
+                      WHEN 54 THEN CASE WHEN '13001' = ANY(b.c_all) THEN 65  ELSE 0 END
+                      WHEN 55 THEN 80                                                     /* 14001 เด็ก */
+                      WHEN 56 THEN 1690                                                   /* 36333 */
+                      WHEN 57 THEN CASE WHEN '3633B' = ANY(b.c_all) THEN 200 ELSE 0 END
+                      WHEN 60 THEN (CASE WHEN '1B004N' = ANY(b.c_all) THEN 250 ELSE 0 END)
+                                 + (CASE WHEN '1B004P' = ANY(b.c_all) THEN 250 ELSE 0 END)
+                      WHEN 61 THEN CASE WHEN '30001' = ANY(b.c_all) THEN 0 ELSE 1000 END /* Palliative ไม่นับซ้ำ */
+                      WHEN 62 THEN (CASE WHEN 'DRUGP'  = ANY(b.c_all) THEN 50 ELSE 0 END)
+                                 + (CASE WHEN 'TELMED' = ANY(b.c_all) THEN 50 ELSE 0 END)
+                      WHEN 63 THEN 800                                                    /* FP001 */
+                      WHEN 64 THEN (CASE WHEN 'FP002_1' = ANY(b.c_all) THEN 2150 ELSE 0 END)
+                                 + (CASE WHEN 'FP002_2' = ANY(b.c_all) THEN 350  ELSE 0 END)
+                      ELSE 0 END)
+        END)::numeric(12,2)                         AS expected_amount,
        (CASE WHEN b.n_visit_day > 1
             THEN 'มี visit ซ้ำในวัน (' || b.n_visit_day || ' visit)' ELSE '' END)::varchar(50) AS dup_visit,
        b.vn, b.pttype, b.hipdata_code
 FROM hits h
 JOIN b ON b.vn = h.vn
-GROUP BY b.vstdate, b.cid, b.fname, b.lname, b.hn, b.vn, b.pttype, b.hipdata_code, b.auth_code, b.n_visit_day
+GROUP BY b.vstdate, b.cid, b.fname, b.lname, b.hn, b.vn, b.pttype, b.hipdata_code, b.auth_code, b.n_visit_day,
+         b.uc_money, b.ttmt_amt, b.inst_amt, b.c_all
 ORDER BY b.vstdate, b.cid;
 
 
@@ -571,6 +637,8 @@ ORDER BY b.vstdate, b.cid;
    ถ้า error เรื่องชื่อคอลัมน์ ให้รันเช็คก่อน:
    SELECT table_name, column_name FROM information_schema.columns
    WHERE (table_name = 'drugitems'    AND column_name ILIKE '%tmt%')
+      OR (table_name = 'drugitems'    AND column_name IN ('name'))
+      OR (table_name = 'opitemrece'   AND column_name IN ('sum_price'))
       OR (table_name = 'nondrugitems' AND column_name ILIKE '%adp%')
       OR (table_name = 'patient'      AND column_name ILIKE '%nation%')
       OR (table_name = 'visit_pttype' AND (column_name ILIKE '%auth%'
@@ -687,6 +755,9 @@ b AS (
            COALESCE(a.c4,    '{}'::text[])  AS c4,
            COALESCE(a.c5,    '{}'::text[])  AS c5,
            COALESCE(t.n, 0)                 AS ttmt_n,
+           COALESCE(t.amt, 0)               AS ttmt_amt,
+           COALESCE(t.kkd, false)           AS ttmt_kkd,   <span class="cm">/* ยอดเงินยา TTMT (เหมาต่อรายการยา) */</span>
+           COALESCE(ia.amt, 0)              AS inst_amt,   <span class="cm">/* ยอดเงิน Instrument (ราคาที่คิดตามสิทธิ UC) */</span>
            au.auth_code
     FROM v
 
@@ -705,15 +776,42 @@ b AS (
                 AND COALESCE(r.qty, 0) &gt; 0) x
     ) a ON true
 
-    <span class="cm">/* ยาที่มี TTMT code 7 หลัก */</span>
+    <span class="cm">/* ยาที่มี TTMT code 7 หลัก: จำนวนรายการ + ยอดเงินเหมาตามรายการยา (ไม่สนปริมาณ, จับจากชื่อยา) */</span>
     LEFT JOIN LATERAL (
-        SELECT count(DISTINCT r.icode) AS n
-        FROM opitemrece r
-        JOIN drugitems d ON d.icode = r.icode
-        WHERE r.vn = v.vn
-          AND btrim(d.ttmt_code) ~ '^[0-9]{7}$'
-          AND COALESCE(r.qty, 0) &gt; 0
+        SELECT count(*) AS n,
+               bool_or(dd.name LIKE '%กระดูกไก่ดำ%') AS kkd,   <span class="cm">/* มียากระดูกไก่ดำ (จ่ายรวมใน GB) */</span>
+               sum(CASE
+                  WHEN dd.name LIKE '%ไพล%' THEN 40
+                  WHEN dd.name LIKE '%มะขามป้อม%' THEN 84
+                  WHEN dd.name LIKE '%มะแว้ง%' THEN 50
+                  WHEN dd.name LIKE '%อบเชย%' THEN 84
+                  WHEN dd.name LIKE '%ขมิ้นชัน%' THEN 56
+                  WHEN dd.name LIKE '%มะขามแขก%' THEN 31.5
+                  WHEN dd.name LIKE '%เพชรสัง%' THEN 204
+                  WHEN dd.name LIKE '%พญายอ%' THEN 33
+                  WHEN dd.name LIKE '%กระดูกไก่%' THEN 0
+                  WHEN dd.name LIKE '%เทพจิต%' THEN 70
+                  WHEN dd.name LIKE '%ประคบ%' THEN 100
+                  WHEN dd.name LIKE '%สหัศธา%' THEN 73
+                  ELSE 0 END) AS amt
+        FROM (SELECT DISTINCT r.icode, d.name
+              FROM opitemrece r
+              JOIN drugitems d ON d.icode = r.icode
+              WHERE r.vn = v.vn
+                AND btrim(d.ttmt_code) ~ '^[0-9]{7}$'
+                AND COALESCE(r.qty, 0) &gt; 0) dd
     ) t ON true
+
+    <span class="cm">/* ยอดเงิน Instrument (type 2, เฉพาะ 240 รหัส) = ราคาที่คิดในรายการ (opitemrece.sum_price) */</span>
+    LEFT JOIN LATERAL (
+        SELECT sum(r.sum_price) AS amt
+        FROM opitemrece r
+        JOIN nondrugitems n ON n.icode = r.icode
+        WHERE r.vn = v.vn
+          AND btrim(n.nhso_adp_type_id::text) = '2'
+          AND upper(btrim(n.nhso_adp_code)) = ANY((SELECT codes FROM inst)::text[])
+          AND COALESCE(r.qty, 0) &gt; 0
+    ) ia ON true
 
     <span class="cm">/* ICD10 ของ visit (ตัดจุด/ตัวใหญ่) รูป ',Z130,Z321,' */</span>
     LEFT JOIN LATERAL (
@@ -740,7 +838,8 @@ hits AS (
 
     <span class="cm">/* 1. ยา TTMT 7 หลัก */</span>
     UNION ALL
-    SELECT vn, 10, 'ยา TTMT 7 หลัก (' || ttmt_n || ' รายการ)', '', ''
+    SELECT vn, 10, 'ยา TTMT 7 หลัก (' || ttmt_n || ' รายการ'
+                   || CASE WHEN ttmt_kkd THEN ' · กระดูกไก่ดำ จ่ายรวมใน GB' ELSE '' END || ')', '', ''
     FROM b WHERE uw AND ttmt_n &gt; 0
 
     <span class="cm">/* 2. Instrument (type 2) — นับเฉพาะ nhso_adp_code ที่อยู่ในรายการที่กำหนด (240 รหัส) */</span>
@@ -942,12 +1041,46 @@ SELECT b.vstdate                                     AS vstdate,
             ELSE 'ไม่ครบ: ' || string_agg(h.code || ' ' || h.miss, '; ' ORDER BY h.ord)
                                FILTER (WHERE h.miss &lt;&gt; '')
        END)::varchar(1000)                           AS check_result,
+       <span class="cm">/* ยอดเงินคาดว่าจะได้รับ: สิทธิ 03, 05, 31 = ทั้ง visit (ลูกหนี้สิทธิ) | อื่นๆ = ผลรวมรายการที่ตรวจพบ */</span>
+       (CASE WHEN b.pttype IN ('03', '05', '31') THEN b.uc_money
+             ELSE sum(CASE h.ord
+                      WHEN 10 THEN b.ttmt_amt                                             <span class="cm">/* ยา TTMT */</span>
+                      WHEN 20 THEN b.inst_amt                                             <span class="cm">/* Instrument */</span>
+                      WHEN 40 THEN CASE WHEN '90004' = ANY(b.c_all) THEN 600 ELSE 0 END
+                      WHEN 41 THEN CASE WHEN '13001' = ANY(b.c_all) THEN 65  ELSE 0 END
+                      WHEN 42 THEN 80                                                     <span class="cm">/* 14001 */</span>
+                      WHEN 43 THEN 100                                                    <span class="cm">/* 15001 */</span>
+                      WHEN 44 THEN 500                                                    <span class="cm">/* 30009 */</span>
+                      WHEN 45 THEN 400                                                    <span class="cm">/* 30010 */</span>
+                      WHEN 46 THEN CASE WHEN '30011' = ANY(b.c_all) THEN 360 ELSE 0 END
+                      WHEN 47 THEN CASE WHEN '30012' = ANY(b.c_all) THEN 600 ELSE 0 END
+                      WHEN 48 THEN CASE WHEN '30013' = ANY(b.c_all) THEN 190 ELSE 0 END
+                      WHEN 49 THEN CASE WHEN '30014' = ANY(b.c_all) THEN 75  ELSE 0 END
+                      WHEN 50 THEN 150                                                    <span class="cm">/* 30015 */</span>
+                      WHEN 51 THEN 135                                                    <span class="cm">/* 30016 */</span>
+                      WHEN 52 THEN CASE WHEN '90005' = ANY(b.c_all) THEN 60  ELSE 0 END
+                      WHEN 53 THEN 1000                                                   <span class="cm">/* Palliative (30001) */</span>
+                      WHEN 54 THEN CASE WHEN '13001' = ANY(b.c_all) THEN 65  ELSE 0 END
+                      WHEN 55 THEN 80                                                     <span class="cm">/* 14001 เด็ก */</span>
+                      WHEN 56 THEN 1690                                                   <span class="cm">/* 36333 */</span>
+                      WHEN 57 THEN CASE WHEN '3633B' = ANY(b.c_all) THEN 200 ELSE 0 END
+                      WHEN 60 THEN (CASE WHEN '1B004N' = ANY(b.c_all) THEN 250 ELSE 0 END)
+                                 + (CASE WHEN '1B004P' = ANY(b.c_all) THEN 250 ELSE 0 END)
+                      WHEN 61 THEN CASE WHEN '30001' = ANY(b.c_all) THEN 0 ELSE 1000 END <span class="cm">/* Palliative ไม่นับซ้ำ */</span>
+                      WHEN 62 THEN (CASE WHEN 'DRUGP'  = ANY(b.c_all) THEN 50 ELSE 0 END)
+                                 + (CASE WHEN 'TELMED' = ANY(b.c_all) THEN 50 ELSE 0 END)
+                      WHEN 63 THEN 800                                                    <span class="cm">/* FP001 */</span>
+                      WHEN 64 THEN (CASE WHEN 'FP002_1' = ANY(b.c_all) THEN 2150 ELSE 0 END)
+                                 + (CASE WHEN 'FP002_2' = ANY(b.c_all) THEN 350  ELSE 0 END)
+                      ELSE 0 END)
+        END)::numeric(12,2)                         AS expected_amount,
        (CASE WHEN b.n_visit_day &gt; 1
             THEN 'มี visit ซ้ำในวัน (' || b.n_visit_day || ' visit)' ELSE '' END)::varchar(50) AS dup_visit,
        b.vn, b.pttype, b.hipdata_code
 FROM hits h
 JOIN b ON b.vn = h.vn
-GROUP BY b.vstdate, b.cid, b.fname, b.lname, b.hn, b.vn, b.pttype, b.hipdata_code, b.auth_code, b.n_visit_day
+GROUP BY b.vstdate, b.cid, b.fname, b.lname, b.hn, b.vn, b.pttype, b.hipdata_code, b.auth_code, b.n_visit_day,
+         b.uc_money, b.ttmt_amt, b.inst_amt, b.c_all
 ORDER BY b.vstdate, b.cid;
 
 
@@ -955,6 +1088,8 @@ ORDER BY b.vstdate, b.cid;
    ถ้า error เรื่องชื่อคอลัมน์ ให้รันเช็คก่อน:
    SELECT table_name, column_name FROM information_schema.columns
    WHERE (table_name = 'drugitems'    AND column_name ILIKE '%tmt%')
+      OR (table_name = 'drugitems'    AND column_name IN ('name'))
+      OR (table_name = 'opitemrece'   AND column_name IN ('sum_price'))
       OR (table_name = 'nondrugitems' AND column_name ILIKE '%adp%')
       OR (table_name = 'patient'      AND column_name ILIKE '%nation%')
       OR (table_name = 'visit_pttype' AND (column_name ILIKE '%auth%'
